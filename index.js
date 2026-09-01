@@ -13,7 +13,8 @@ const {
   createAudioResource, 
   NoSubscriberBehavior 
 } = require('@discordjs/voice');
-const play = require('@iamtraction/play-dl');
+const ytdl = require('@distube/ytdl-core');
+const yts = require('yt-search');
 
 const client = new Client({
   intents: [
@@ -99,29 +100,18 @@ client.on('interactionCreate', async interaction => {
     const songQuery = interaction.options.getString('song');
 
     try {
-      let stream;
-      let title = songQuery;
-      let songUrl = '';
+      const searchResult = await yts(songQuery);
+      const video = searchResult.videos[0];
 
-      // Tallaabada 1-aad: Ka raadi SoundCloud mar walba si looga fogaado YouTube IP Block
-      const scResults = await play.search(songQuery, { limit: 1, source: { soundcloud: 'tracks' } });
-      
-      if (scResults && scResults.length > 0) {
-        const track = scResults[0];
-        stream = await play.stream_from_info(track);
-        title = track.title;
-        songUrl = track.permalink || track.url;
-      } else {
-        // Tallaabada 2-aad: Haddii SoundCloud wax lagu waayo, YouTube ka raadi
-        const ytResults = await play.search(songQuery, { limit: 1 });
-        if (!ytResults || ytResults.length === 0) {
-          return interaction.editReply('❌ Wax hees ah looma helin magacaas!');
-        }
-        const video = ytResults[0];
-        stream = await play.stream(video.url);
-        title = video.title;
-        songUrl = video.url;
+      if (!video) {
+        return interaction.editReply('❌ Wax hees ah looma helin!');
       }
+
+      const stream = ytdl(video.url, {
+        filter: 'audioonly',
+        highWaterMark: 1 << 25,
+        quality: 'highestaudio'
+      });
 
       let connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
@@ -141,18 +131,19 @@ client.on('interactionCreate', async interaction => {
         connection.subscribe(player);
       }
 
-      const resource = createAudioResource(stream.stream, { inputType: stream.type });
+      const resource = createAudioResource(stream);
       player.play(resource);
 
       const embed = new EmbedBuilder()
         .setTitle('🎶 Now Playing')
-        .setDescription(`**[${title}](${songUrl})**`)
+        .setDescription(`**[${video.title}](${video.url})**\nDuration: \`${video.timestamp}\``)
+        .setThumbnail(video.thumbnail)
         .setColor('#00ff7f');
 
       return interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error(error);
-      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! Hubi in heestu jira.');
+      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta!');
     }
   }
 
