@@ -8,6 +8,6 @@
   "dependencies": {
     "discord.js": "^14.14.0",
     "@discordjs/voice": "^0.16.1",
-    "axios": "^1.6.0"
+    "@iamtraction/play-dl": "^1.9.1"
   }
 }
