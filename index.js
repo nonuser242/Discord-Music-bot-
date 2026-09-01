@@ -14,7 +14,6 @@ const {
   getVoiceConnection, 
   createAudioPlayer, 
   createAudioResource, 
-  AudioPlayerStatus, 
   NoSubscriberBehavior 
 } = require('@discordjs/voice');
 const play = require('@iamtraction/play-dl');
@@ -29,7 +28,6 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-// Map lagu kaydiyo player-ka server kasta
 const players = new Map();
 
 const commands = [
@@ -92,13 +90,13 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
 
-    // --- COMMAND: /play ---
     if (commandName === 'play') {
       const voiceChannel = interaction.member.voice.channel;
       if (!voiceChannel) {
         return interaction.reply({ content: '❌ Horta gal Voice Call!', flags: 64 });
       }
 
+      // Defer-ka halkan ayaa la dhigay si looga baaqsado Error 10062
       await interaction.deferReply();
       const songQuery = interaction.options.getString('song');
 
@@ -144,7 +142,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // --- COMMAND: /connect ---
     if (commandName === 'connect') {
       const voiceChannel = interaction.member.voice.channel;
       if (!voiceChannel) {
@@ -160,7 +157,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply(`✅ Bot-ku wuxuu ku xirmay: **${voiceChannel.name}**`);
     }
 
-    // --- COMMAND: /disconnect ---
     if (commandName === 'disconnect') {
       const connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
@@ -172,7 +168,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply('🔌 Bot-kii waa ka baxay Voice Call-ka.');
     }
 
-    // --- COMMAND: /help ---
     if (commandName === 'help') {
       const embed = new EmbedBuilder()
         .setTitle('📋 Help Menu')
@@ -189,13 +184,11 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [embed] });
     }
 
-    // --- COMMAND: /invite ---
     if (commandName === 'invite') {
       const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&scope=bot%20applications.commands&permissions=8`;
       return interaction.reply({ content: `🔗 Linkiga bot-ka: ${inviteUrl}` });
     }
 
-    // --- COMMAND: /lyrics ---
     if (commandName === 'lyrics') {
       await interaction.deferReply();
       const songTitle = interaction.options.getString('song');
@@ -234,3 +227,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(TOKEN);
+
