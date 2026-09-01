@@ -9,7 +9,15 @@ const {
   ButtonStyle, 
   EmbedBuilder 
 } = require('discord.js');
-const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
+const { 
+  joinVoiceChannel, 
+  getVoiceConnection, 
+  createAudioPlayer, 
+  createAudioResource, 
+  AudioPlayerStatus, 
+  NoSubscriberBehavior 
+} = require('@discordjs/voice');
+const play = require('@iamtraction/play-dl');
 
 const client = new Client({
   intents: [
@@ -18,11 +26,21 @@ const client = new Client({
   ]
 });
 
-// Xogta bot-ka waxaa loo marayaa Environment Variables (Amni ah)
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
+// Map lagu kaydiyo player-ka server kasta
+const players = new Map();
+
 const commands = [
+  new SlashCommandBuilder()
+    .setName('play')
+    .setDescription('Ku daar hees Voice Call-ka.')
+    .addStringOption(option =>
+      option.setName('song')
+        .setDescription('Magaca heesta ama Link')
+        .setRequired(true)),
+
   new SlashCommandBuilder()
     .setName('connect')
     .setDescription('Bot-ka ku xir Voice Call-ka.'),
@@ -53,7 +71,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
   try {
     if (!TOKEN || !CLIENT_ID) {
-      console.error('❌ Fadlan deji TOKEN iyo CLIENT_ID gudaha Environment Variables!');
+      console.error('❌ Deji TOKEN iyo CLIENT_ID Environment Variables!');
       return;
     }
     await rest.put(
@@ -74,6 +92,59 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
 
+    // --- COMMAND: /play ---
+    if (commandName === 'play') {
+      const voiceChannel = interaction.member.voice.channel;
+      if (!voiceChannel) {
+        return interaction.reply({ content: '❌ Horta gal Voice Call!', flags: 64 });
+      }
+
+      await interaction.deferReply();
+      const songQuery = interaction.options.getString('song');
+
+      try {
+        const results = await play.search(songQuery, { limit: 1 });
+        if (!results || results.length === 0) {
+          return interaction.editReply('❌ Wax hees ah looma helin magacaas!');
+        }
+
+        const video = results[0];
+        const stream = await play.stream(video.url);
+
+        let connection = getVoiceConnection(interaction.guild.id);
+        if (!connection) {
+          connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: interaction.guild.id,
+            adapterCreator: interaction.guild.voiceAdapterCreator,
+          });
+        }
+
+        let player = players.get(interaction.guild.id);
+        if (!player) {
+          player = createAudioPlayer({
+            behaviors: { noSubscriber: NoSubscriberBehavior.Play }
+          });
+          players.set(interaction.guild.id, player);
+          connection.subscribe(player);
+        }
+
+        const resource = createAudioResource(stream.stream, { inputType: stream.type });
+        player.play(resource);
+
+        const embed = new EmbedBuilder()
+          .setTitle('🎶 Now Playing')
+          .setDescription(`**[${video.title}](${video.url})**\nDuration: \`${video.durationRaw}\``)
+          .setColor('#00ff7f');
+
+        return interaction.editReply({ embeds: [embed] });
+      } catch (error) {
+        console.error(error);
+        return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta!');
+      }
+    }
+
+    // --- COMMAND: /connect ---
     if (commandName === 'connect') {
       const voiceChannel = interaction.member.voice.channel;
       if (!voiceChannel) {
@@ -86,19 +157,10 @@ client.on('interactionCreate', async interaction => {
         adapterCreator: interaction.guild.voiceAdapterCreator,
       });
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('disconnect_btn')
-          .setLabel('Ka bixid')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      return interaction.reply({ 
-        content: `✅ Bot-ku wuxuu ku xirmay: **${voiceChannel.name}**`, 
-        components: [row] 
-      });
+      return interaction.reply(`✅ Bot-ku wuxuu ku xirmay: **${voiceChannel.name}**`);
     }
 
+    // --- COMMAND: /disconnect ---
     if (commandName === 'disconnect') {
       const connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
@@ -106,52 +168,40 @@ client.on('interactionCreate', async interaction => {
       }
 
       connection.destroy();
+      players.delete(interaction.guild.id);
       return interaction.reply('🔌 Bot-kii waa ka baxay Voice Call-ka.');
     }
 
+    // --- COMMAND: /help ---
     if (commandName === 'help') {
       const embed = new EmbedBuilder()
         .setTitle('📋 Help Menu')
         .setColor('#0099ff')
-        .setDescription('Amarrada aad isticmaali karto:')
+        .setDescription('Amarrada bot-ka:')
         .addFields(
+          { name: '/play <song>', value: 'Ku daar hees Voice Call-ka.' },
           { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
           { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
           { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
-          { name: '/invite', value: 'Soo saar linkiga bot-ka.' },
-          { name: '/help', value: 'Liiska amarrada.' }
+          { name: '/invite', value: 'Soo saar linkiga bot-ka.' }
         );
 
       return interaction.reply({ embeds: [embed] });
     }
 
+    // --- COMMAND: /invite ---
     if (commandName === 'invite') {
       const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&scope=bot%20applications.commands&permissions=8`;
-      
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel('Add to Discord')
-          .setStyle(ButtonStyle.Link)
-          .setURL(inviteUrl)
-      );
-
-      return interaction.reply({
-        content: '🔗 Riix batoonka si aad bot-ka ugu soo casuunto Server-kaaga:',
-        components: [row]
-      });
+      return interaction.reply({ content: `🔗 Linkiga bot-ka: ${inviteUrl}` });
     }
 
+    // --- COMMAND: /lyrics ---
     if (commandName === 'lyrics') {
       await interaction.deferReply();
       const songTitle = interaction.options.getString('song');
 
       try {
         const response = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(songTitle)}`);
-        
-        if (!response.ok) {
-          return interaction.editReply('❌ Dhib ayaa ka dhacday raadinta lyrics-ka!');
-        }
-
         const results = await response.json();
 
         if (!results || results.length === 0 || !results[0].plainLyrics) {
@@ -159,9 +209,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         const track = results[0];
-        const rawLyrics = track.plainLyrics;
-
-        const formattedLyrics = rawLyrics
+        const formattedLyrics = track.plainLyrics
           .split('\n')
           .map(line => `-# ${line}`)
           .join('\n');
@@ -179,19 +227,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ embeds: [embed] });
       } catch (error) {
         console.error(error);
-        return interaction.editReply('❌ Dhib ayaa ka dhacday marka lagu jiro raadinta lyrics-ka!');
-      }
-    }
-  }
-
-  if (interaction.isButton()) {
-    if (interaction.customId === 'disconnect_btn') {
-      const connection = getVoiceConnection(interaction.guild.id);
-      if (connection) {
-        connection.destroy();
-        return interaction.reply({ content: '🔌 Bot-ka waa ka baxay channel-ka.', flags: 64 });
-      } else {
-        return interaction.reply({ content: '❌ Bot-ku horey ayuu uga baxay channel-ka.', flags: 64 });
+        return interaction.editReply('❌ Dhib ayaa ka dhacday raadinta lyrics-ka!');
       }
     }
   }
