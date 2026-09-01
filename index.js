@@ -13,12 +13,8 @@ const {
   createAudioResource, 
   NoSubscriberBehavior 
 } = require('@discordjs/voice');
-const play = require('@iamtraction/play-dl');
-
-// Deji User-Agent iyo Client si uu u dhaafo block-ka YouTube
-play.setToken({
-  useragent: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36']
-});
+const ytdl = require('@distube/ytdl-core');
+const ytSearch = require('yt-search');
 
 const client = new Client({
   intents: [
@@ -35,10 +31,10 @@ const players = new Map();
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Ku daar hees Voice Call-ka.')
+    .setDescription('Ku daar hees Voice Call-ka (Link ama Magac).')
     .addStringOption(option =>
       option.setName('song')
-        .setDescription('Magaca heesta ama Linkiga')
+        .setDescription('Magaca heesta ama Linkiga YouTube')
         .setRequired(true)),
 
   new SlashCommandBuilder()
@@ -104,15 +100,32 @@ client.on('interactionCreate', async interaction => {
     const songInput = interaction.options.getString('song');
 
     try {
-      // Isku day YT raadin leh custom header
-      const searchResults = await play.search(songInput, { limit: 1 });
+      let songUrl = songInput;
+      let title = '';
+      let thumbnail = '';
 
-      if (!searchResults || searchResults.length === 0) {
-        return interaction.editReply('❌ Wax hees ah looma helin!');
+      if (!ytdl.validateURL(songInput)) {
+        const searchResult = await ytSearch(songInput);
+        if (!searchResult || !searchResult.videos.length) {
+          return interaction.editReply('❌ Wax hees ah looma helin magacaas!');
+        }
+        const video = searchResult.videos[0];
+        songUrl = video.url;
+        title = video.title;
+        thumbnail = video.thumbnail;
+      } else {
+        const info = await ytdl.getBasicInfo(songUrl);
+        title = info.videoDetails.title;
+        thumbnail = info.videoDetails.thumbnails[0]?.url;
       }
 
-      const video = searchResults[0];
-      const stream = await play.stream(video.url, { discordPlayerCompatibility: true });
+      // Stream ku shaqaynaya IOS client si loo dhaafo IP Block
+      const stream = ytdl(songUrl, {
+        filter: 'audioonly',
+        highWaterMark: 1 << 25,
+        clientVersion: 'IOS',
+        quality: 'highestaudio'
+      });
 
       let connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
@@ -132,19 +145,19 @@ client.on('interactionCreate', async interaction => {
         connection.subscribe(player);
       }
 
-      const resource = createAudioResource(stream.stream, { inputType: stream.type });
+      const resource = createAudioResource(stream);
       player.play(resource);
 
       const embed = new EmbedBuilder()
         .setTitle('🎶 Now Playing')
-        .setDescription(`**[${video.title}](${video.url})**`)
-        .setThumbnail(video.thumbnails[0]?.url)
+        .setDescription(`**[${title}](${songUrl})**`)
+        .setThumbnail(thumbnail)
         .setColor('#00ff7f');
 
       return interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      console.error('PLAY ERROR:', error);
-      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! Dhibaatadu waa IP-ga server-ka.');
+      console.error(error);
+      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta!');
     }
   }
 
@@ -183,7 +196,7 @@ client.on('interactionCreate', async interaction => {
       .setColor('#0099ff')
       .setDescription('Amarrada bot-ka:')
       .addFields(
-        { name: '/play <Magac/Link>', value: 'Ku daar hees Voice Call-ka.' },
+        { name: '/play <Magac ama Link>', value: 'Ku daar hees Voice Call-ka.' },
         { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
         { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
         { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
