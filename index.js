@@ -13,7 +13,7 @@ const {
   createAudioResource, 
   NoSubscriberBehavior 
 } = require('@discordjs/voice');
-const ytdl = require('@distube/ytdl-core');
+const play = require('@iamtraction/play-dl');
 
 const client = new Client({
   intents: [
@@ -30,10 +30,10 @@ const players = new Map();
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Ku daar hees Voice Call-ka.')
+    .setDescription('Ku daar hees Voice Call-ka (Link ama Magac).')
     .addStringOption(option =>
       option.setName('song')
-        .setDescription('Linkiga heesta YouTube (URL)')
+        .setDescription('Magaca heesta ama Linkiga YouTube')
         .setRequired(true)),
 
   new SlashCommandBuilder()
@@ -96,19 +96,36 @@ client.on('interactionCreate', async interaction => {
     }
 
     await interaction.deferReply();
-    const songUrl = interaction.options.getString('song');
+    const songInput = interaction.options.getString('song');
 
     try {
-      if (!ytdl.validateURL(songUrl)) {
-        return interaction.editReply('❌ Fadlan soo gali Linkiga saxda ah ee YouTube-ka (URL)!');
-      }
+      let stream;
+      let title = '';
+      let url = '';
+      let thumbnail = '';
 
-      const info = await ytdl.getInfo(songUrl);
-      const stream = ytdl.downloadFromInfo(info, {
-        filter: 'audioonly',
-        highWaterMark: 1 << 25,
-        quality: 'highestaudio'
-      });
+      // Kala saar inay tahay URL ama Raadin (Search)
+      const validate = await play.validate(songInput);
+
+      if (validate === 'yt_video') {
+        // Haddii uu yahay YouTube Link
+        const videoInfo = await play.video_info(songInput);
+        title = videoInfo.video_details.title;
+        url = videoInfo.video_details.url;
+        thumbnail = videoInfo.video_details.thumbnails[0]?.url;
+        stream = await play.stream_from_info(videoInfo);
+      } else {
+        // Haddii uu yahay Magac Hees (Search Query)
+        const searchResults = await play.search(songInput, { limit: 1 });
+        if (!searchResults || searchResults.length === 0) {
+          return interaction.editReply('❌ Wax hees ah looma helin magacaas!');
+        }
+        const video = searchResults[0];
+        title = video.title;
+        url = video.url;
+        thumbnail = video.thumbnails[0]?.url;
+        stream = await play.stream(video.url);
+      }
 
       let connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
@@ -128,19 +145,19 @@ client.on('interactionCreate', async interaction => {
         connection.subscribe(player);
       }
 
-      const resource = createAudioResource(stream);
+      const resource = createAudioResource(stream.stream, { inputType: stream.type });
       player.play(resource);
 
       const embed = new EmbedBuilder()
         .setTitle('🎶 Now Playing')
-        .setDescription(`**[${info.videoDetails.title}](${songUrl})**`)
-        .setThumbnail(info.videoDetails.thumbnails[0]?.url)
+        .setDescription(`**[${title}](${url})**`)
+        .setThumbnail(thumbnail)
         .setColor('#00ff7f');
 
       return interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error(error);
-      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! Hubi linkiga.');
+      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! YouTube ayaa laga yaabaa inuu xiray IP-ga server-ka.');
     }
   }
 
@@ -179,7 +196,7 @@ client.on('interactionCreate', async interaction => {
       .setColor('#0099ff')
       .setDescription('Amarrada bot-ka:')
       .addFields(
-        { name: '/play <YouTube URL>', value: 'Ku daar hees Voice Call-ka.' },
+        { name: '/play <Magac ama Link>', value: 'Ku daar hees Voice Call-ka.' },
         { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
         { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
         { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
@@ -233,3 +250,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(TOKEN);
+
