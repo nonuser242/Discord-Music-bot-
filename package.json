@@ -1,14 +1,7 @@
-{
-  "name": "discord-music-bot",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "discord.js": "^14.14.0",
-    "@discordjs/voice": "^0.16.1",
-    "@iamtraction/play-dl": "^1.9.1",
-    "sodium-native": "^4.0.1"
-  }
+"dependencies": {
+  "@discordjs/voice": "^0.18.0",
+  "@distube/ytdl-core": "^4.15.9",
+  "discord-api-types": "^0.37.100",
+  "discord.js": "^14.18.0",
+  "yt-search": "^2.12.1"
 }
