@@ -29,8 +29,8 @@ const {
 
 const play = require('@iamtraction/play-dl');
 
-const TOKEN = process.evn.TOKEN ||
-const CLIENT_ID = process.env.CLIENT_ID || 
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
 
 const client = new Client({
   intents: [
