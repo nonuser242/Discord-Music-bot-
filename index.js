@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const {
   Client,
   GatewayIntentBits,
@@ -11,10 +13,10 @@ const {
   Routes,
   SlashCommandBuilder,
   EmbedBuilder,
-  PermissionFlagsBits,
+  MessageFlags,
   ActivityType,
-  MessageFlags
-} = require("discord.js");
+  PermissionFlagsBits
+} = require('discord.js');
 
 const {
   joinVoiceChannel,
@@ -25,9 +27,9 @@ const {
   entersState,
   getVoiceConnection,
   NoSubscriberBehavior
-} = require("@discordjs/voice");
+} = require('@discordjs/voice');
 
-const play = require("@iamtraction/play-dl");
+const play = require('@iamtraction/play-dl');
 
 
 /* =========================
@@ -35,11 +37,10 @@ const play = require("@iamtraction/play-dl");
 ========================= */
 
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID || "1543273003822092469";
+const CLIENT_ID = process.env.CLIENT_ID || '1543273003822092469';
 
 if (!TOKEN) {
-  console.error("❌ TOKEN lama helin!");
-  console.error("Kinesis Environment Variables ku dar: TOKEN");
+  console.error('❌ TOKEN lama helin. Ku dar TOKEN gudaha .env');
   process.exit(1);
 }
 
@@ -57,7 +58,8 @@ const client = new Client({
 
 
 /* =========================
-   MUSIC PLAYERS
+   PLAYERS
+   Server walba player gaar ah
 ========================= */
 
 const players = new Map();
@@ -70,61 +72,37 @@ const players = new Map();
 const commands = [
 
   new SlashCommandBuilder()
-    .setName("play")
-    .setDescription("Ku daar hees Voice Channel-ka.")
+    .setName('play')
+    .setDescription('Ku daar hees Voice Call-ka.')
     .addStringOption(option =>
       option
-        .setName("song")
-        .setDescription("Magaca heesta ama YouTube link")
+        .setName('song')
+        .setDescription('Magaca heesta ama YouTube link')
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
-    .setName("connect")
-    .setDescription("Bot-ka geli Voice Channel-ka."),
+    .setName('connect')
+    .setDescription('Bot-ka geli Voice Call-ka.'),
 
   new SlashCommandBuilder()
-    .setName("disconnect")
-    .setDescription("Bot-ka ka saar Voice Channel-ka."),
+    .setName('disconnect')
+    .setDescription('Bot-ka ka saar Voice Call-ka.'),
 
   new SlashCommandBuilder()
-    .setName("skip")
-    .setDescription("Ka gudub heesta hadda socota."),
+    .setName('invite')
+    .setDescription('Soo saar linkiga loogu yeero bot-ka.'),
 
   new SlashCommandBuilder()
-    .setName("pause")
-    .setDescription("Jooji heesta si ku meel gaar ah."),
-
-  new SlashCommandBuilder()
-    .setName("resume")
-    .setDescription("Sii wad heesta."),
-
-  new SlashCommandBuilder()
-    .setName("queue")
-    .setDescription("Arag safka heesaha."),
-
-  new SlashCommandBuilder()
-    .setName("invite")
-    .setDescription("Hel linkiga lagu daro Bot-ka."),
-
-  new SlashCommandBuilder()
-    .setName("clean")
-    .setDescription("Tirtir fariimaha channel-ka.")
-    .addIntegerOption(option =>
-      option
-        .setName("amount")
-        .setDescription("Tirada fariimaha 1 ilaa 100")
-        .setRequired(true)
-        .setMinValue(1)
-        .setMaxValue(100)
-    )
+    .setName('clean')
+    .setDescription('Nadiifi ilaa 100 fariimood.')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageMessages
     ),
 
   new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("Arag dhammaan amarrada Bot-ka.")
+    .setName('help')
+    .setDescription('Hel caawimaad ku saabsan bot-ka.')
 
 ].map(command => command.toJSON());
 
@@ -135,7 +113,9 @@ const commands = [
 
 function formatMs(ms) {
 
-  ms = Math.max(0, ms || 0);
+  if (!ms || ms < 0) {
+    return '0:00';
+  }
 
   const totalSeconds = Math.floor(ms / 1000);
 
@@ -143,39 +123,42 @@ function formatMs(ms) {
 
   const seconds = totalSeconds % 60;
 
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 
-function durationToSeconds(duration) {
+function durationToMs(duration) {
 
-  if (!duration || duration === "Unknown") {
+  if (!duration || duration === 'Unknown') {
     return 0;
   }
 
-  const parts = duration
-    .split(":")
-    .map(Number);
+  const parts = duration.split(':').map(Number);
 
   if (parts.some(isNaN)) {
     return 0;
   }
 
   if (parts.length === 2) {
-    return parts[0] * 60 + parts[1];
+
+    return (
+      parts[0] * 60 +
+      parts[1]
+    ) * 1000;
+
   }
 
   if (parts.length === 3) {
+
     return (
       parts[0] * 3600 +
       parts[1] * 60 +
       parts[2]
-    );
+    ) * 1000;
+
   }
 
   return 0;
-
 }
 
 
@@ -183,145 +166,348 @@ function durationToSeconds(duration) {
    PROGRESS BAR
 ========================= */
 
-function createProgressBar(
-  currentMs,
-  duration
-) {
+function createProgressBar(currentMs, duration) {
 
-  const totalSeconds =
-    durationToSeconds(duration);
-
-  if (!totalSeconds) {
-
-    return (
-      "`🔘▬▬▬▬▬▬▬▬▬▬` " +
-      `\`${formatMs(currentMs)} / ${duration}\``
-    );
-
-  }
-
-  const totalMs =
-    totalSeconds * 1000;
-
-  const progress =
-    Math.min(
-      Math.max(
-        currentMs / totalMs,
-        0
-      ),
-      1
-    );
+  const totalMs = durationToMs(duration);
 
   const size = 10;
 
-  const position =
-    Math.round(progress * size);
+  if (!totalMs) {
 
-  let bar = "";
+    return `🔘▬▬▬▬▬▬▬▬▬▬ \`0:00 / ${duration}\`;
 
-  for (
-    let i = 0;
-    i <= size;
-    i++
-  ) {
+  }
+
+  const progress = Math.max(
+    0,
+    Math.min(currentMs / totalMs, 1)
+  );
+
+  const position = Math.round(progress * size);
+
+  let bar = '';
+
+  for (let i = 0; i <= size; i++) {
 
     if (i === position) {
-      bar += "🔘";
+      bar += '🔘';
     } else {
-      bar += "▬";
+      bar += '▬';
     }
 
   }
 
-  return (
-    `\`${bar}\` ` +
-    `\`${formatMs(currentMs)} / ${duration}\``
+  return `${bar}\n\`${formatMs(currentMs)} / ${duration}\``;
+}
+
+
+/* =========================
+   LYRICS
+========================= */
+
+/*
+  LRC synced lyrics parser
+
+  Format:
+  [00:10.00] Lyrics text
+*/
+
+function parseLrc(lrcText) {
+
+  if (!lrcText) {
+    return [];
+  }
+
+  const result = [];
+
+  const lines = lrcText.split('\n');
+
+  for (const line of lines) {
+
+    const matches = [
+      ...line.matchAll(
+        /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g
+      )
+    ];
+
+    if (!matches.length) {
+      continue;
+    }
+
+    const text = line
+      .replace(
+        /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g,
+        ''
+      )
+      .trim();
+
+    if (!text) {
+      continue;
+    }
+
+    for (const match of matches) {
+
+      const minutes = Number(match[1]);
+
+      const seconds = Number(match[2]);
+
+      let milliseconds = match[3]
+        ? Number(
+            match[3].padEnd(3, '0')
+          )
+        : 0;
+
+      const timeMs =
+        minutes * 60000 +
+        seconds * 1000 +
+        milliseconds;
+
+      result.push({
+        timeMs,
+        text
+      });
+
+    }
+
+  }
+
+  return result.sort(
+    (a, b) => a.timeMs - b.timeMs
   );
+}
+
+
+/*
+  Search synced lyrics
+
+  If synced lyrics are unavailable,
+  bot displays:
+  Lyrics lama helin.
+*/
+
+async function fetchLyrics(songTitle) {
+
+  try {
+
+    const url =
+      `https://lrclib.net/api/search?q=${encodeURIComponent(songTitle)}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'DiscordMusicBot/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    const match = data.find(
+      item => item.syncedLyrics
+    );
+
+    if (!match) {
+      return [];
+    }
+
+    return parseLrc(
+      match.syncedLyrics
+    );
+
+  } catch (error) {
+
+    console.log(
+      'Lyrics error:',
+      error.message
+    );
+
+    return [];
+
+  }
 
 }
 
 
 /* =========================
-   CREATE EMBED
+   GET CURRENT LYRIC
 ========================= */
 
-function createMusicEmbed(
-  musicData,
-  finished = false
-) {
+function getLyricsDisplay(song, playbackMs) {
 
-  const song =
-    musicData.current;
+  if (
+    !song.parsedLyrics ||
+    song.parsedLyrics.length === 0
+  ) {
+
+    return '-# Lyrics lama helin.';
+
+  }
+
+  let currentIndex = -1;
+
+  for (
+    let i = 0;
+    i < song.parsedLyrics.length;
+    i++
+  ) {
+
+    if (
+      playbackMs >=
+      song.parsedLyrics[i].timeMs
+    ) {
+
+      currentIndex = i;
+
+    } else {
+
+      break;
+
+    }
+
+  }
+
+
+  let previous = '';
+  let current = '🎵 ...';
+  let next = '';
+
+
+  if (currentIndex >= 0) {
+
+    current =
+      song.parsedLyrics[currentIndex].text;
+
+    if (currentIndex > 0) {
+
+      previous =
+        song.parsedLyrics[
+          currentIndex - 1
+        ].text;
+
+    }
+
+    if (
+      currentIndex <
+      song.parsedLyrics.length - 1
+    ) {
+
+      next =
+        song.parsedLyrics[
+          currentIndex + 1
+        ].text;
+
+    }
+
+  } else {
+
+    next =
+      song.parsedLyrics[0].text;
+
+  }
+
+
+  let display = '';
+
+
+  if (previous) {
+
+    display +=
+      `-# ${previous}\n`;
+
+  }
+
+
+  display +=
+    `**${current}**`;
+
+
+  if (next) {
+
+    display +=
+      `\n-# ${next}`;
+
+  }
+
+
+  return display;
+
+}
+
+
+/* =========================
+   EMBED
+========================= */
+
+function createMusicEmbed(musicData) {
+
+  const song = musicData.current;
 
   if (!song) {
     return null;
   }
 
-  const playbackMs =
-    musicData.resource?.playbackDuration ||
-    0;
 
-  const progress =
-    finished
-      ? `\`▬▬▬▬▬▬▬▬▬▬🔘\` \`${song.duration} / ${song.duration}\``
-      : createProgressBar(
-          playbackMs,
-          song.duration
-        );
+  const playbackMs =
+    musicData.resource?.playbackDuration || 0;
+
 
   const volume =
     Math.round(
       musicData.volume * 100
     );
 
-  const loop =
-    musicData.loop
-      ? "🔂 ON"
-      : "❌ OFF";
 
-  const status =
-    musicData.player.state.status;
+  const loopStatus =
+    musicData.loop === 'song'
+      ? 'ON 🔁'
+      : 'OFF';
 
-  let playingStatus =
-    "▶️ Playing";
 
-  if (
-    status ===
-    AudioPlayerStatus.Paused
-  ) {
-    playingStatus = "⏸️ Paused";
-  }
+  const progress =
+    createProgressBar(
+      playbackMs,
+      song.duration
+    );
 
-  if (finished) {
-    playingStatus =
-      "🏁 Finished";
-  }
+
+  const lyrics =
+    getLyricsDisplay(
+      song,
+      playbackMs
+    );
+
 
   const embed =
     new EmbedBuilder()
+
       .setTitle(
-        finished
-          ? "🎧 MUSIC FINISHED"
-          : "🎧 NOW PLAYING"
+        '🎧 NOW PLAYING'
       )
+
       .setDescription(
-        `🎵 **[${song.title}](${song.url})**\n\n` +
 
-        `⏱️ ${progress}\n\n` +
+        `🎵 **[${song.title}](${song.url})**
 
-        `🔊 Volume: **${volume}%**\n` +
+⏱️ ${progress}
 
-        `🔁 Loop: **${loop}**\n` +
+🔊 Volume: \`${volume}%\`
+🔁 Loop: \`${loopStatus}\`
 
-        `📋 Queue: **${musicData.queue.length}**\n\n` +
+**Lyrics**
 
-        `${playingStatus}`
+${lyrics}`
+
       )
-      .setColor(
-        finished
-          ? 0x2f3136
-          : 0xff007f
-      );
+
+      .setColor('#ff007f');
+
 
   if (song.thumbnail) {
 
@@ -330,6 +516,7 @@ function createMusicEmbed(
     );
 
   }
+
 
   return embed;
 
@@ -342,77 +529,80 @@ function createMusicEmbed(
 
 function createMusicButtons() {
 
-  const row1 =
+  return [
+
     new ActionRowBuilder()
       .addComponents(
 
         new ButtonBuilder()
-          .setCustomId("back_10")
-          .setLabel("10s")
-          .setEmoji("⏪")
-          .setStyle(
-            ButtonStyle.Secondary
-          ),
 
-        new ButtonBuilder()
-          .setCustomId("pause_resume")
-          .setLabel("Pause")
-          .setEmoji("⏯️")
+          .setCustomId(
+            'pause_resume'
+          )
+
+          .setLabel(
+            'Pause'
+          )
+
+          .setEmoji('⏯️')
+
           .setStyle(
             ButtonStyle.Primary
           ),
 
-        new ButtonBuilder()
-          .setCustomId("forward_10")
-          .setLabel("10s")
-          .setEmoji("⏩")
-          .setStyle(
-            ButtonStyle.Secondary
-          ),
 
         new ButtonBuilder()
-          .setCustomId("skip")
-          .setLabel("Skip")
-          .setEmoji("⏭️")
-          .setStyle(
-            ButtonStyle.Secondary
+
+          .setCustomId(
+            'skip'
           )
 
-      );
+          .setLabel(
+            'Skip'
+          )
 
-  const row2 =
-    new ActionRowBuilder()
-      .addComponents(
+          .setEmoji('⏩')
 
-        new ButtonBuilder()
-          .setCustomId("loop")
-          .setLabel("Loop")
-          .setEmoji("🔁")
           .setStyle(
             ButtonStyle.Secondary
           ),
 
+
         new ButtonBuilder()
-          .setCustomId("volume")
-          .setLabel("Volume")
-          .setEmoji("🔊")
+
+          .setCustomId(
+            'volume'
+          )
+
+          .setLabel(
+            'Volume'
+          )
+
+          .setEmoji('🔊')
+
           .setStyle(
             ButtonStyle.Success
           ),
 
+
         new ButtonBuilder()
-          .setCustomId("disconnect")
-          .setLabel("Leave")
-          .setEmoji("👋")
-          .setStyle(
-            ButtonStyle.Danger
+
+          .setCustomId(
+            'loop'
           )
 
-      );
+          .setLabel(
+            'Loop'
+          )
 
-  return [
-    row1,
-    row2
+          .setEmoji('🔁')
+
+          .setStyle(
+            ButtonStyle.Secondary
+          )
+
+      )
+
   ];
 
 }
@@ -433,6 +623,7 @@ async function updateMusicMessage(
     return;
   }
 
+
   try {
 
     const embed =
@@ -440,83 +631,22 @@ async function updateMusicMessage(
         musicData
       );
 
-    if (!embed) {
-      return;
-    }
 
     await musicData.message.edit({
+
       embeds: [embed],
+
       components:
         createMusicButtons()
+
     });
 
   } catch (error) {
 
-    console.error(
-      "MESSAGE UPDATE ERROR:",
+    console.log(
+      'Message update error:',
       error.message
     );
-
-  }
-
-}
-
-
-/* =========================
-   BOT STATUS
-========================= */
-
-function updateBotStatus() {
-
-  let activeSong = null;
-
-  for (
-    const data of players.values()
-  ) {
-
-    if (data.current) {
-      activeSong =
-        data.current.title;
-      break;
-    }
-
-  }
-
-  if (activeSong) {
-
-    client.user.setPresence({
-
-      activities: [
-        {
-          name:
-            `🎵 ${activeSong}`.slice(
-              0,
-              128
-            ),
-          type:
-            ActivityType.Listening
-        }
-      ],
-
-      status: "online"
-
-    });
-
-  } else {
-
-    client.user.setPresence({
-
-      activities: [
-        {
-          name: "/play | Music",
-          type:
-            ActivityType.Listening
-        }
-      ],
-
-      status: "online"
-
-    });
 
   }
 
@@ -544,9 +674,8 @@ function createMusicPlayer(
 
     });
 
-  const musicData = {
 
-    guildId,
+  const musicData = {
 
     player,
 
@@ -560,17 +689,14 @@ function createMusicPlayer(
 
     volume: 1,
 
-    loop: false,
+    loop: 'off',
 
     message: null,
 
-    updateInterval: null,
-
-    seekSeconds: 0,
-
-    manuallyStopped: false
+    updateInterval: null
 
   };
+
 
   players.set(
     guildId,
@@ -580,163 +706,38 @@ function createMusicPlayer(
 
   player.on(
     AudioPlayerStatus.Idle,
+
     async () => {
-
-      if (
-        musicData.manuallyStopped
-      ) {
-
-        musicData.manuallyStopped =
-          false;
-
-        return;
-
-      }
 
       await playNext(
         guildId
       );
 
     }
+
   );
 
 
   player.on(
-    "error",
+    'error',
+
     async error => {
 
       console.error(
-        "AUDIO PLAYER ERROR:",
+        'PLAYER ERROR:',
         error.message
       );
 
-      if (
-        !musicData.manuallyStopped
-      ) {
-
-        await playNext(
-          guildId
-        );
-
-      }
+      await playNext(
+        guildId
+      );
 
     }
+
   );
 
 
   return musicData;
-
-}
-
-
-/* =========================
-   GET / JOIN CONNECTION
-========================= */
-
-async function getOrJoinVoice(
-  interaction
-) {
-
-  const guild =
-    interaction.guild;
-
-  const voiceChannel =
-    interaction.member?.voice?.channel;
-
-  if (!voiceChannel) {
-    throw new Error(
-      "Horta gal Voice Channel!"
-    );
-  }
-
-  let connection =
-    getVoiceConnection(
-      guild.id
-    );
-
-  if (!connection) {
-
-    connection =
-      joinVoiceChannel({
-
-        channelId:
-          voiceChannel.id,
-
-        guildId:
-          guild.id,
-
-        adapterCreator:
-          guild.voiceAdapterCreator,
-
-        selfDeaf: true
-
-      });
-
-  }
-
-  await entersState(
-    connection,
-    VoiceConnectionStatus.Ready,
-    30000
-  );
-
-  return connection;
-
-}
-
-
-/* =========================
-   CREATE SONG
-========================= */
-
-async function getSong(
-  query
-) {
-
-  console.log(
-    "🔎 Searching:",
-    query
-  );
-
-  const results =
-    await play.search(
-      query,
-      {
-        limit: 1,
-        source: {
-          youtube: "video"
-        }
-      }
-    );
-
-  if (
-    !results ||
-    results.length === 0
-  ) {
-    return null;
-  }
-
-  const video =
-    results[0];
-
-  return {
-
-    title:
-      video.title ||
-      "Unknown Song",
-
-    url:
-      video.url,
-
-    thumbnail:
-      video.thumbnails?.at(-1)?.url ||
-      "",
-
-    duration:
-      video.durationRaw ||
-      "Unknown"
-
-  };
 
 }
 
@@ -747,44 +748,47 @@ async function getSong(
 
 async function playSong(
   guildId,
-  song,
-  seekSeconds = 0
+  song
 ) {
 
   const musicData =
     players.get(guildId);
 
-  if (
-    !musicData ||
-    !song
-  ) {
+
+  if (!musicData) {
     return;
   }
+
 
   try {
 
     musicData.current =
       song;
 
-    musicData.seekSeconds =
-      Math.max(
-        0,
-        seekSeconds
-      );
 
-    console.log(
-      "🎵 Playing:",
-      song.url
-    );
+    /*
+      Get synced lyrics
+    */
 
+    if (
+      !song.parsedLyrics
+    ) {
+
+      song.parsedLyrics =
+        await fetchLyrics(
+          song.title
+        );
+
+    }
+
+
+    /*
+      Get audio stream
+    */
 
     const stream =
       await play.stream(
-        song.url,
-        {
-          seek:
-            musicData.seekSeconds
-        }
+        song.url
       );
 
 
@@ -796,33 +800,31 @@ async function playSong(
           inputType:
             stream.type,
 
-          inlineVolume: true
+          inlineVolume:
+            true
 
         }
       );
 
 
-    if (
-      resource.volume
-    ) {
-
-      resource.volume.setVolume(
+    resource.volume
+      ?.setVolume(
         musicData.volume
       );
-
-    }
 
 
     musicData.resource =
       resource;
+
 
     musicData.player.play(
       resource
     );
 
 
-    updateBotStatus();
-
+    /*
+      Update every 2 seconds
+    */
 
     if (
       musicData.updateInterval
@@ -836,23 +838,20 @@ async function playSong(
 
 
     musicData.updateInterval =
-      setInterval(
-        () => {
+      setInterval(() => {
 
-          if (
-            musicData.player.state.status ===
-            AudioPlayerStatus.Playing
-          ) {
+        if (
+          musicData.player.state.status ===
+          AudioPlayerStatus.Playing
+        ) {
 
-            updateMusicMessage(
-              musicData
-            );
+          updateMusicMessage(
+            musicData
+          );
 
-          }
+        }
 
-        },
-        3000
-      );
+      }, 2000);
 
 
     await updateMusicMessage(
@@ -863,13 +862,10 @@ async function playSong(
   } catch (error) {
 
     console.error(
-      "❌ PLAY ERROR:",
+      'PLAY ERROR:',
       error
     );
 
-
-    musicData.current =
-      null;
 
     await playNext(
       guildId
@@ -881,7 +877,7 @@ async function playSong(
 
 
 /* =========================
-   PLAY NEXT
+   NEXT SONG
 ========================= */
 
 async function playNext(
@@ -891,268 +887,107 @@ async function playNext(
   const musicData =
     players.get(guildId);
 
+
   if (!musicData) {
     return;
   }
 
 
   if (
-    musicData.loop &&
+    musicData.updateInterval
+  ) {
+
+    clearInterval(
+      musicData.updateInterval
+    );
+
+    musicData.updateInterval =
+      null;
+
+  }
+
+
+  /*
+    Loop current song
+  */
+
+  if (
+    musicData.loop === 'song' &&
     musicData.current
   ) {
 
     return playSong(
       guildId,
-      musicData.current,
-      0
+      musicData.current
     );
 
   }
 
 
-  if (
-    musicData.queue.length === 0
-  ) {
-
-    musicData.current =
-      null;
-
-    musicData.resource =
-      null;
-
-    updateBotStatus();
-
-    if (
-      musicData.updateInterval
-    ) {
-
-      clearInterval(
-        musicData.updateInterval
-      );
-
-      musicData.updateInterval =
-        null;
-
-    }
-
-    return;
-
-  }
-
-
-  const nextSong =
-    musicData.queue.shift();
-
-
-  await playSong(
-    guildId,
-    nextSong
-  );
-
-}
-
-
-/* =========================
-   SEEK
-========================= */
-
-async function seekSong(
-  guildId,
-  secondsChange
-) {
-
-  const musicData =
-    players.get(guildId);
+  /*
+    Queue
+  */
 
   if (
-    !musicData ||
-    !musicData.current
+    musicData.queue.length > 0
   ) {
-    return false;
-  }
+
+    const nextSong =
+      musicData.queue.shift();
 
 
-  const currentSeconds =
-    (
-      musicData.resource?.playbackDuration ||
-      0
-    ) / 1000;
-
-
-  let newSeconds =
-    currentSeconds +
-    musicData.seekSeconds +
-    secondsChange;
-
-
-  newSeconds =
-    Math.max(
-      0,
-      newSeconds
+    return playSong(
+      guildId,
+      nextSong
     );
 
-
-  const totalSeconds =
-    durationToSeconds(
-      musicData.current.duration
-    );
-
-
-  if (
-    totalSeconds > 0
-  ) {
-
-    newSeconds =
-      Math.min(
-        newSeconds,
-        Math.max(
-          0,
-          totalSeconds - 1
-        )
-      );
-
   }
 
 
-  musicData.manuallyStopped =
-    true;
+  /*
+    No more songs
+  */
+
+  musicData.current =
+    null;
+
+  musicData.resource =
+    null;
 
 
-  musicData.player.stop();
-
-
-  await playSong(
-    guildId,
-    musicData.current,
-    newSeconds
-  );
-
-
-  return true;
-
-}
-
-
-/* =========================
-   DISCONNECT
-========================= */
-
-function disconnectGuild(
-  guildId
-) {
-
-  const musicData =
-    players.get(guildId);
-
-
-  if (musicData) {
-
-    musicData.manuallyStopped =
-      true;
-
-    if (
-      musicData.updateInterval
-    ) {
-
-      clearInterval(
-        musicData.updateInterval
-      );
-
-    }
+  if (
+    musicData.message
+  ) {
 
     try {
 
-      musicData.player.stop();
+      const embed =
+        new EmbedBuilder()
 
-    } catch {}
+          .setTitle(
+            '🎧 MUSIC PLAYER'
+          )
+
+          .setDescription(
+            '🏁 Heestii waa dhammaatay.'
+          )
+
+          .setColor(
+            '#2f3136'
+          );
 
 
-    players.delete(
-      guildId
-    );
+      await musicData.message.edit({
+
+        embeds: [embed],
+
+        components: []
+
+      });
+
+    } catch (error) {}
 
   }
-
-
-  const connection =
-    getVoiceConnection(
-      guildId
-    );
-
-
-  if (connection) {
-
-    try {
-
-      connection.destroy();
-
-    } catch {}
-
-  }
-
-
-  updateBotStatus();
-
-}
-
-
-/* =========================
-   HELP EMBED
-========================= */
-
-function createHelpEmbed() {
-
-  return new EmbedBuilder()
-
-    .setTitle(
-      "🎵 Music Bot Help"
-    )
-
-    .setDescription(
-
-      "**Music Commands**\n\n" +
-
-      "`/play <song>` 🎵\n" +
-      "Ku daar hees Voice Channel-ka.\n\n" +
-
-      "`/connect` 🎤\n" +
-      "Bot-ka geli Voice Channel.\n\n" +
-
-      "`/disconnect` 👋\n" +
-      "Bot-ka ka saar Voice Channel.\n\n" +
-
-      "`/skip` ⏭️\n" +
-      "Ka gudub heesta.\n\n" +
-
-      "`/pause` ⏸️\n" +
-      "Hakiso heesta.\n\n" +
-
-      "`/resume` ▶️\n" +
-      "Sii wad heesta.\n\n" +
-
-      "`/queue` 📋\n" +
-      "Arag safka heesaha.\n\n" +
-
-      "`/clean <amount>` 🧹\n" +
-      "Tirtir fariimaha.\n\n" +
-
-      "`/invite` 🔗\n" +
-      "Hel linkiga Bot-ka.\n\n" +
-
-      "**Buttons**\n" +
-      "⏪ 10 seconds gadaal\n" +
-      "⏯️ Pause / Resume\n" +
-      "⏩ 10 seconds hore\n" +
-      "⏭️ Skip\n" +
-      "🔁 Loop\n" +
-      "🔊 Volume\n" +
-      "👋 Leave"
-
-    )
-
-    .setColor(
-      0xff007f
-    );
 
 }
 
@@ -1162,7 +997,8 @@ function createHelpEmbed() {
 ========================= */
 
 client.once(
-  "ready",
+  'ready',
+
   async () => {
 
     console.log(
@@ -1170,44 +1006,53 @@ client.once(
     );
 
 
-    updateBotStatus();
+    client.user.setActivity(
+      '/play | Music',
+      {
+        type:
+          ActivityType.Listening
+      }
+    );
 
 
     const rest =
       new REST({
-        version: "10"
+        version: '10'
       })
-      .setToken(TOKEN);
+        .setToken(TOKEN);
 
 
     try {
 
       await rest.put(
+
         Routes.applicationCommands(
           CLIENT_ID
         ),
+
         {
           body:
             commands
         }
+
       );
 
 
       console.log(
-        "✅ Slash Commands Loaded!"
+        '✅ Slash Commands Loaded!'
       );
-
 
     } catch (error) {
 
       console.error(
-        "COMMAND ERROR:",
+        'COMMAND ERROR:',
         error
       );
 
     }
 
   }
+
 );
 
 
@@ -1216,10 +1061,39 @@ client.once(
 ========================= */
 
 client.on(
-  "interactionCreate",
+  'interactionCreate',
+
   async interaction => {
 
     try {
+
+      /*
+        DM
+      */
+
+      if (
+        !interaction.guild
+      ) {
+
+        if (
+          interaction.isChatInputCommand()
+        ) {
+
+          return interaction.reply({
+
+            content:
+              '❌ Bot-kan Music-ka Server Voice Channel ayuu u baahan yahay.',
+
+            flags:
+              MessageFlags.Ephemeral
+
+          });
+
+        }
+
+        return;
+
+      }
 
 
       /* =====================
@@ -1230,183 +1104,20 @@ client.on(
         interaction.isChatInputCommand()
       ) {
 
-        const command =
+        const commandName =
           interaction.commandName;
 
 
-        /* HELP */
-
-        if (
-          command === "help"
-        ) {
-
-          return interaction.reply({
-            embeds: [
-              createHelpEmbed()
-            ],
-            flags:
-              MessageFlags.Ephemeral
-          });
-
-        }
-
-
-        /* INVITE */
-
-        if (
-          command === "invite"
-        ) {
-
-          const inviteUrl =
-            `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot%20applications.commands`;
-
-
-          const row =
-            new ActionRowBuilder()
-              .addComponents(
-
-                new ButtonBuilder()
-                  .setLabel(
-                    "Add to Discord"
-                  )
-                  .setStyle(
-                    ButtonStyle.Link
-                  )
-                  .setURL(
-                    inviteUrl
-                  )
-
-              );
-
-
-          return interaction.reply({
-
-            content:
-              "🔗 **Ku soo dar Bot-ka Server-kaaga:**",
-
-            components:
-              [row],
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-        }
-
-
         /*
-          Commands-ka hoose
-          waxay u baahan yihiin Server
+          PLAY
         */
 
         if (
-          !interaction.guild
+          commandName === 'play'
         ) {
-
-          return interaction.reply({
-
-            content:
-              "❌ Command-kan DM gudaheeda kama shaqeeyo. `/help` iyo `/invite` ayaad DM ku isticmaali kartaa.",
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-        }
-
-
-        /* CONNECT */
-
-        if (
-          command === "connect"
-        ) {
-
-          const connection =
-            await getOrJoinVoice(
-              interaction
-            );
-
-
-          let musicData =
-            players.get(
-              interaction.guild.id
-            );
-
-
-          if (!musicData) {
-
-            musicData =
-              createMusicPlayer(
-                interaction.guild.id,
-                connection
-              );
-
-          }
-
-
-          connection.subscribe(
-            musicData.player
-          );
-
-
-          return interaction.reply(
-            "🎤 Bot-ku wuxuu galay Voice Channel-ka!"
-          );
-
-        }
-
-
-        /* DISCONNECT */
-
-        if (
-          command === "disconnect"
-        ) {
-
-          disconnectGuild(
-            interaction.guild.id
-          );
-
-
-          return interaction.reply(
-            "👋 Bot-ka wuxuu ka baxay Voice Channel-ka."
-          );
-
-        }
-
-
-        /* PLAY */
-
-        if (
-          command === "play"
-        ) {
-
-          const query =
-            interaction.options
-              .getString("song")
-              ?.trim();
-
-
-          if (!query) {
-
-            return interaction.reply({
-
-              content:
-                "❌ Geli magaca heesta ama YouTube link!",
-
-              flags:
-                MessageFlags.Ephemeral
-
-            });
-
-          }
-
 
           const voiceChannel =
-            interaction.member
-              ?.voice
-              ?.channel;
+            interaction.member.voice.channel;
 
 
           if (!voiceChannel) {
@@ -1414,7 +1125,7 @@ client.on(
             return interaction.reply({
 
               content:
-                "❌ Horta gal Voice Channel!",
+                '❌ Horta gal Voice Channel!',
 
               flags:
                 MessageFlags.Ephemeral
@@ -1424,28 +1135,135 @@ client.on(
           }
 
 
+          const query =
+            interaction.options
+              .getString('song')
+              .trim();
+
+
           await interaction.deferReply();
 
 
-          const song =
-            await getSong(
-              query
-            );
+          let results;
 
 
-          if (!song) {
+          try {
+
+            results =
+              await play.search(
+                query,
+                {
+
+                  limit: 1,
+
+                  source: {
+                    youtube: 'video'
+                  }
+
+                }
+              );
+
+          } catch (error) {
 
             return interaction.editReply(
-              "❌ Hees lama helin!"
+              '❌ Search-ka ayaa fashilmay.'
             );
 
           }
 
 
-          const connection =
-            await getOrJoinVoice(
-              interaction
+          if (
+            !results ||
+            results.length === 0
+          ) {
+
+            return interaction.editReply(
+              '❌ Hees lama helin!'
             );
+
+          }
+
+
+          const video =
+            results[0];
+
+
+          const song = {
+
+            title:
+              video.title,
+
+            url:
+              video.url,
+
+            thumbnail:
+              video.thumbnails?.at(-1)?.url ||
+              '',
+
+            duration:
+              video.durationRaw ||
+              'Unknown',
+
+            parsedLyrics:
+              null
+
+          };
+
+
+          let connection =
+            getVoiceConnection(
+              interaction.guild.id
+            );
+
+
+          /*
+            Connect
+          */
+
+          if (!connection) {
+
+            connection =
+              joinVoiceChannel({
+
+                channelId:
+                  voiceChannel.id,
+
+                guildId:
+                  interaction.guild.id,
+
+                adapterCreator:
+                  interaction.guild
+                    .voiceAdapterCreator,
+
+                selfDeaf:
+                  true
+
+              });
+
+
+            try {
+
+              await entersState(
+
+                connection,
+
+                VoiceConnectionStatus.Ready,
+
+                30000
+
+              );
+
+            } catch (error) {
+
+              connection.destroy();
+
+              return interaction.editReply(
+                '❌ Voice Call-ka lama geli karin.'
+              );
+
+            }
+
+          }
 
 
           let musicData =
@@ -1454,29 +1272,31 @@ client.on(
             );
 
 
+          /*
+            Create server player
+          */
+
           if (!musicData) {
 
             musicData =
               createMusicPlayer(
+
                 interaction.guild.id,
+
                 connection
+
               );
+
+
+            connection.subscribe(
+              musicData.player
+            );
 
           }
 
 
-          musicData.connection =
-            connection;
-
-
-          connection.subscribe(
-            musicData.player
-          );
-
-
           /*
-            Haddii hees socoto,
-            queue geli
+            Queue
           */
 
           if (
@@ -1489,43 +1309,36 @@ client.on(
 
 
             return interaction.editReply(
-              `➕ **${song.title}** ayaa safka lagu daray!`
+              `➕ **${song.title}** safka ayaa lagu daray!`
             );
 
           }
 
 
           /*
-            Message marka hore samee
-            si embed undefined error uusan u dhicin
+            Set message first
           */
 
-          musicData.current =
-            song;
+          const loadingEmbed =
+            new EmbedBuilder()
 
+              .setTitle(
+                '🎧 Loading...'
+              )
 
-          const embed =
-            createMusicEmbed(
-              musicData
-            );
+              .setDescription(
+                `⏳ **${song.title}**`
+              )
 
-
-          if (!embed) {
-
-            return interaction.editReply(
-              "❌ Embed lama samayn karin."
-            );
-
-          }
+              .setColor(
+                '#ff007f'
+              );
 
 
           await interaction.editReply({
 
             embeds:
-              [embed],
-
-            components:
-              createMusicButtons()
+              [loadingEmbed]
 
           });
 
@@ -1535,13 +1348,15 @@ client.on(
 
 
           /*
-            Kadib music play
+            Play
           */
 
           await playSong(
+
             interaction.guild.id,
-            song,
-            0
+
+            song
+
           );
 
 
@@ -1550,27 +1365,24 @@ client.on(
         }
 
 
-        /* SKIP */
+        /*
+          CONNECT
+        */
 
         if (
-          command === "skip"
+          commandName === 'connect'
         ) {
 
-          const musicData =
-            players.get(
-              interaction.guild.id
-            );
+          const voiceChannel =
+            interaction.member.voice.channel;
 
 
-          if (
-            !musicData ||
-            !musicData.current
-          ) {
+          if (!voiceChannel) {
 
             return interaction.reply({
 
               content:
-                "❌ Wax hees ah ma socoto!",
+                '❌ Horta gal Voice Channel!',
 
               flags:
                 MessageFlags.Ephemeral
@@ -1580,207 +1392,270 @@ client.on(
           }
 
 
-          musicData.player.stop();
+          let connection =
+            getVoiceConnection(
+              interaction.guild.id
+            );
+
+
+          if (connection) {
+
+            return interaction.reply({
+
+              content:
+                '🎤 Bot-ku hore ayuu Voice Call-ka ugu jiraa.',
+
+              flags:
+                MessageFlags.Ephemeral
+
+            });
+
+          }
+
+
+          connection =
+            joinVoiceChannel({
+
+              channelId:
+                voiceChannel.id,
+
+              guildId:
+                interaction.guild.id,
+
+              adapterCreator:
+                interaction.guild
+                  .voiceAdapterCreator,
+
+              selfDeaf:
+                true
+
+            });
+
+
+          try {
+
+            await entersState(
+
+              connection,
+
+              VoiceConnectionStatus.Ready,
+
+              30000
+
+            );
+
+
+            return interaction.reply(
+              `🎤 Bot-ka wuxuu galay **${voiceChannel.name}**`
+            );
+
+          } catch (error) {
+
+            connection.destroy();
+
+            return interaction.reply(
+              '❌ Voice Call-ka lama geli karin.'
+            );
+
+          }
+
+        }
+
+
+        /*
+          DISCONNECT
+        */
+
+        if (
+          commandName ===
+          'disconnect'
+        ) {
+
+          const connection =
+            getVoiceConnection(
+              interaction.guild.id
+            );
+
+
+          const musicData =
+            players.get(
+              interaction.guild.id
+            );
+
+
+          if (
+            musicData?.updateInterval
+          ) {
+
+            clearInterval(
+              musicData.updateInterval
+            );
+
+          }
+
+
+          if (
+            musicData?.player
+          ) {
+
+            musicData.player.stop();
+
+          }
+
+
+          if (connection) {
+
+            connection.destroy();
+
+          }
+
+
+          players.delete(
+            interaction.guild.id
+          );
 
 
           return interaction.reply(
-            "⏭️ Heesta waa laga gudbay!"
+            '👋 Bot-ku wuxuu ka baxay Voice Call-ka.'
           );
 
         }
 
 
-        /* PAUSE */
+        /*
+          INVITE
+        */
 
         if (
-          command === "pause"
+          commandName === 'invite'
         ) {
 
-          const musicData =
-            players.get(
-              interaction.guild.id
-            );
+          const inviteUrl =
+            `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot%20applications.commands`;
 
 
-          if (!musicData) {
+          const row =
+            new ActionRowBuilder()
 
-            return interaction.reply({
+              .addComponents(
 
-              content:
-                "❌ Wax hees ah ma socoto!",
+                new ButtonBuilder()
 
-              flags:
-                MessageFlags.Ephemeral
+                  .setLabel(
+                    'Add to Discord'
+                  )
 
-            });
+                  .setStyle(
+                    ButtonStyle.Link
+                  )
 
-          }
+                  .setURL(
+                    inviteUrl
+                  )
 
-
-          musicData.player.pause();
-
-
-          await updateMusicMessage(
-            musicData
-          );
+              );
 
 
           return interaction.reply({
 
             content:
-              "⏸️ Heesta waa la hakiyay.",
+              '🔗 Ku soo dar Bot-ka Server-kaaga:',
 
-            flags:
-              MessageFlags.Ephemeral
+            components:
+              [row]
 
           });
 
         }
 
 
-        /* RESUME */
+        /*
+          CLEAN
+        */
 
         if (
-          command === "resume"
+          commandName === 'clean'
         ) {
 
-          const musicData =
-            players.get(
-              interaction.guild.id
-            );
-
-
-          if (!musicData) {
-
-            return interaction.reply({
-
-              content:
-                "❌ Wax hees ah ma socoto!",
-
-              flags:
-                MessageFlags.Ephemeral
-
-            });
-
-          }
-
-
-          musicData.player.unpause();
-
-
-          await updateMusicMessage(
-            musicData
-          );
-
-
-          return interaction.reply({
-
-            content:
-              "▶️ Heesta waa la sii waday.",
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-        }
-
-
-        /* QUEUE */
-
-        if (
-          command === "queue"
-        ) {
-
-          const musicData =
-            players.get(
-              interaction.guild.id
-            );
-
-
-          if (
-            !musicData ||
-            musicData.queue.length === 0
-          ) {
-
-            return interaction.reply({
-
-              content:
-                "📋 Safka heesaha waa madhan.",
-
-              flags:
-                MessageFlags.Ephemeral
-
-            });
-
-          }
-
-
-          const queueText =
-            musicData.queue
-              .slice(0, 10)
-              .map(
-                (song, index) =>
-                  `**${index + 1}.** ${song.title}`
+          const deleted =
+            await interaction.channel
+              .bulkDelete(
+                100,
+                true
               )
-              .join("\n");
+              .catch(
+                () => null
+              );
 
+
+          return interaction.reply({
+
+            content:
+              deleted
+                ? `🧹 ${deleted.size} fariimood ayaa la tirtiray!`
+                : '❌ Fariimaha lama tirtiri karin.',
+
+            flags:
+              MessageFlags.Ephemeral
+
+          });
+
+        }
+
+
+        /*
+          HELP
+        */
+
+        if (
+          commandName === 'help'
+        ) {
 
           const embed =
             new EmbedBuilder()
 
               .setTitle(
-                "📋 Music Queue"
+                '📖 Music Bot Help'
               )
 
               .setDescription(
-                queueText
+
+`🎵 \`/play <song>\`
+Ku daar hees.
+
+🎤 \`/connect\`
+Bot-ka geli Voice Call.
+
+👋 \`/disconnect\`
+Bot-ka ka saar Voice Call.
+
+🔗 \`/invite\`
+Hel linkiga Bot-ka.
+
+🧹 \`/clean\`
+Tirtir ilaa 100 fariimood.
+
+📖 \`/help\`
+Caawimaad.
+
+**Buttons**
+
+⏯️ Pause / Resume
+⏩ Skip
+🔊 Volume
+🔁 Loop`
+
               )
 
               .setColor(
-                0xff007f
+                '#00ff7f'
               );
 
 
           return interaction.reply({
 
             embeds:
-              [embed],
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-        }
-
-
-        /* CLEAN */
-
-        if (
-          command === "clean"
-        ) {
-
-          const amount =
-            interaction.options
-              .getInteger(
-                "amount"
-              );
-
-
-          await interaction.channel.bulkDelete(
-            amount,
-            true
-          );
-
-
-          return interaction.reply({
-
-            content:
-              `🧹 ${amount} fariimood waa la tirtiray.`,
-
-            flags:
-              MessageFlags.Ephemeral
+              [embed]
 
           });
 
@@ -1797,46 +1672,10 @@ client.on(
         interaction.isButton()
       ) {
 
-        if (
-          !interaction.guild
-        ) {
-          return;
-        }
-
-
-        const guildId =
-          interaction.guild.id;
-
-
         const musicData =
           players.get(
-            guildId
+            interaction.guild.id
           );
-
-
-        /* DISCONNECT BUTTON */
-
-        if (
-          interaction.customId ===
-          "disconnect"
-        ) {
-
-          disconnectGuild(
-            guildId
-          );
-
-
-          return interaction.reply({
-
-            content:
-              "👋 Bot-ka wuxuu ka baxay Voice Channel-ka.",
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-        }
 
 
         if (
@@ -1847,7 +1686,7 @@ client.on(
           return interaction.reply({
 
             content:
-              "❌ Wax hees ah ma socoto!",
+              '❌ Wax hees ah ma socoto!',
 
             flags:
               MessageFlags.Ephemeral
@@ -1857,40 +1696,29 @@ client.on(
         }
 
 
-        /* PAUSE / RESUME */
+        /*
+          PAUSE / RESUME
+        */
 
         if (
           interaction.customId ===
-          "pause_resume"
+          'pause_resume'
         ) {
 
           if (
+
             musicData.player.state.status ===
             AudioPlayerStatus.Paused
+
           ) {
 
             musicData.player.unpause();
 
 
-            await interaction.reply({
+            return interaction.reply({
 
               content:
-                "▶️ Heesta waa la sii waday.",
-
-              flags:
-                MessageFlags.Ephemeral
-
-            });
-
-          } else {
-
-            musicData.player.pause();
-
-
-            await interaction.reply({
-
-              content:
-                "⏸️ Heesta waa la hakiyay.",
+                '▶️ Heesta waa la sii waday.',
 
               flags:
                 MessageFlags.Ephemeral
@@ -1900,27 +1728,42 @@ client.on(
           }
 
 
-          await updateMusicMessage(
-            musicData
-          );
+          musicData.player.pause();
+
+
+          return interaction.reply({
+
+            content:
+              '⏸️ Heesta waa la hakiyay.',
+
+            flags:
+              MessageFlags.Ephemeral
+
+          });
 
         }
 
 
-        /* SKIP */
+        /*
+          SKIP
+        */
 
-        else if (
+        if (
           interaction.customId ===
-          "skip"
+          'skip'
         ) {
+
+          musicData.loop =
+            'off';
+
 
           musicData.player.stop();
 
 
-          await interaction.reply({
+          return interaction.reply({
 
             content:
-              "⏭️ Heesta waa laga gudbay!",
+              '⏩ Heesta waa laga gudbay.',
 
             flags:
               MessageFlags.Ephemeral
@@ -1930,71 +1773,19 @@ client.on(
         }
 
 
-        /* BACK 10 */
+        /*
+          LOOP
+        */
 
-        else if (
+        if (
           interaction.customId ===
-          "back_10"
-        ) {
-
-          await interaction.deferReply({
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-
-          await seekSong(
-            guildId,
-            -10
-          );
-
-
-          await interaction.editReply(
-            "⏪ 10 seconds gadaal ayaa loo celiyay."
-          );
-
-        }
-
-
-        /* FORWARD 10 */
-
-        else if (
-          interaction.customId ===
-          "forward_10"
-        ) {
-
-          await interaction.deferReply({
-
-            flags:
-              MessageFlags.Ephemeral
-
-          });
-
-
-          await seekSong(
-            guildId,
-            10
-          );
-
-
-          await interaction.editReply(
-            "⏩ 10 seconds hore ayaa loo dhaqaaqay."
-          );
-
-        }
-
-
-        /* LOOP */
-
-        else if (
-          interaction.customId ===
-          "loop"
+          'loop'
         ) {
 
           musicData.loop =
-            !musicData.loop;
+            musicData.loop === 'song'
+              ? 'off'
+              : 'song';
 
 
           await updateMusicMessage(
@@ -2002,12 +1793,12 @@ client.on(
           );
 
 
-          await interaction.reply({
+          return interaction.reply({
 
             content:
-              musicData.loop
-                ? "🔂 Loop waa shidan yahay."
-                : "❌ Loop waa dansan yahay.",
+              musicData.loop === 'song'
+                ? '🔁 Loop ON'
+                : '🔁 Loop OFF',
 
             flags:
               MessageFlags.Ephemeral
@@ -2017,22 +1808,24 @@ client.on(
         }
 
 
-        /* VOLUME */
+        /*
+          VOLUME
+        */
 
-        else if (
+        if (
           interaction.customId ===
-          "volume"
+          'volume'
         ) {
 
           const modal =
             new ModalBuilder()
 
               .setCustomId(
-                "volume_modal"
+                'volume_modal'
               )
 
               .setTitle(
-                "Beddel Volume"
+                'Beddel Volume-ka'
               );
 
 
@@ -2040,11 +1833,11 @@ client.on(
             new TextInputBuilder()
 
               .setCustomId(
-                "volume_input"
+                'volume_input'
               )
 
               .setLabel(
-                "Geli Volume 1 - 100"
+                'Geli Volume (1 - 100)'
               )
 
               .setStyle(
@@ -2052,7 +1845,7 @@ client.on(
               )
 
               .setPlaceholder(
-                "50"
+                '50'
               )
 
               .setRequired(
@@ -2062,6 +1855,7 @@ client.on(
 
           const row =
             new ActionRowBuilder()
+
               .addComponents(
                 input
               );
@@ -2072,7 +1866,7 @@ client.on(
           );
 
 
-          await interaction.showModal(
+          return interaction.showModal(
             modal
           );
 
@@ -2091,7 +1885,7 @@ client.on(
 
         if (
           interaction.customId ===
-          "volume_modal"
+          'volume_modal'
         ) {
 
           const musicData =
@@ -2105,7 +1899,7 @@ client.on(
             return interaction.reply({
 
               content:
-                "❌ Wax hees ah ma socoto!",
+                '❌ Wax hees ah ma socoto!',
 
               flags:
                 MessageFlags.Ephemeral
@@ -2117,23 +1911,29 @@ client.on(
 
           const value =
             Number(
+
               interaction.fields
                 .getTextInputValue(
-                  "volume_input"
+                  'volume_input'
                 )
+
             );
 
 
           if (
+
             !Number.isFinite(value) ||
+
             value < 1 ||
+
             value > 100
+
           ) {
 
             return interaction.reply({
 
               content:
-                "❌ Geli number 1 ilaa 100!",
+                '❌ Geli nambar 1 ilaa 100.',
 
               flags:
                 MessageFlags.Ephemeral
@@ -2167,7 +1967,7 @@ client.on(
           return interaction.reply({
 
             content:
-              `🔊 Volume waxaa loo dhigay **${value}%**.`,
+              `🔊 Volume waxaa loo beddelay **${value}%**`,
 
             flags:
               MessageFlags.Ephemeral
@@ -2182,41 +1982,48 @@ client.on(
     } catch (error) {
 
       console.error(
-        "INTERACTION ERROR:",
+        'INTERACTION ERROR:',
         error
       );
 
 
-      try {
+      if (
+        interaction.isRepliable()
+      ) {
 
-        if (
-          interaction.deferred ||
-          interaction.replied
-        ) {
+        try {
 
-          await interaction.editReply(
-            "❌ Khalad ayaa dhacay."
-          );
+          if (
+            interaction.deferred ||
+            interaction.replied
+          ) {
 
-        } else {
+            await interaction.editReply(
+              '❌ Error ayaa dhacay.'
+            );
 
-          await interaction.reply({
+          } else {
 
-            content:
-              "❌ Khalad ayaa dhacay.",
+            await interaction.reply({
 
-            flags:
-              MessageFlags.Ephemeral
+              content:
+                '❌ Error ayaa dhacay.',
 
-          });
+              flags:
+                MessageFlags.Ephemeral
 
-        }
+            });
 
-      } catch {}
+          }
+
+        } catch (e) {}
+
+      }
 
     }
 
   }
+
 );
 
 
@@ -2224,6 +2031,4 @@ client.on(
    LOGIN
 ========================= */
 
-client.login(
-  TOKEN
-);
+client.login(TOKEN);
