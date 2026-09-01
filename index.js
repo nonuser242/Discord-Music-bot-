@@ -13,7 +13,8 @@ const {
   EmbedBuilder,
   MessageFlags,
   ActivityType,
-} = require("discord.js");
+  PermissionFlagsBits
+} = require('discord.js');
 
 const {
   joinVoiceChannel,
@@ -23,39 +24,35 @@ const {
   VoiceConnectionStatus,
   entersState,
   getVoiceConnection,
-  NoSubscriberBehavior,
-} = require("@discordjs/voice");
+  NoSubscriberBehavior
+} = require('@discordjs/voice');
 
-const play = require("@iamtraction/play-dl");
+const play = require('@iamtraction/play-dl');
 
-/*
-  Kinesis Environment Variables:
-
-  TOKEN = Your new Discord bot token
-  CLIENT_ID = 1543273003822092469
-*/
+/* =========================
+   CONFIG
+========================= */
 
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID || "1543273003822092469";
+const CLIENT_ID = '1543273003822092469';
 
 if (!TOKEN) {
-  console.error("❌ TOKEN environment variable is missing!");
+  console.error('❌ TOKEN environment variable is missing!');
   process.exit(1);
 }
+
+/* =========================
+   DISCORD CLIENT
+========================= */
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-  ],
+    GatewayIntentBits.GuildVoiceStates
+  ]
 });
 
-/*
-  Every Discord server gets its own music player.
-*/
-
 const players = new Map();
-
 
 /* =========================
    SLASH COMMANDS
@@ -64,69 +61,45 @@ const players = new Map();
 const commands = [
 
   new SlashCommandBuilder()
-    .setName("play")
-    .setDescription("Play music in your voice channel.")
+    .setName('play')
+    .setDescription('Play a song in your Voice Channel.')
     .addStringOption(option =>
       option
-        .setName("song")
-        .setDescription("Song name or YouTube URL")
+        .setName('song')
+        .setDescription('Song name or URL')
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
-    .setName("connect")
-    .setDescription("Connect the bot to your voice channel."),
+    .setName('disconnect')
+    .setDescription('Disconnect the bot from the Voice Channel.'),
 
   new SlashCommandBuilder()
-    .setName("disconnect")
-    .setDescription("Disconnect the bot from voice."),
+    .setName('skip')
+    .setDescription('Skip the current song.'),
 
   new SlashCommandBuilder()
-    .setName("skip")
-    .setDescription("Skip the current song."),
+    .setName('invite')
+    .setDescription('Get the bot invite link.'),
 
   new SlashCommandBuilder()
-    .setName("pause")
-    .setDescription("Pause the current song."),
+    .setName('help')
+    .setDescription('Show all bot commands.'),
 
   new SlashCommandBuilder()
-    .setName("resume")
-    .setDescription("Resume the current song."),
-
-  new SlashCommandBuilder()
-    .setName("volume")
-    .setDescription("Change the music volume.")
-    .addIntegerOption(option =>
-      option
-        .setName("amount")
-        .setDescription("Volume from 1 to 100")
-        .setRequired(true)
-        .setMinValue(1)
-        .setMaxValue(100)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("loop")
-    .setDescription("Turn song loop on or off."),
-
-  new SlashCommandBuilder()
-    .setName("invite")
-    .setDescription("Get the bot invite link."),
-
-  new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("Show all bot commands."),
+    .setName('clean')
+    .setDescription('Delete up to 100 messages.')
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageMessages
+    )
 
 ].map(command => command.toJSON());
 
-
 /* =========================
-   FUNCTIONS
+   TIME FORMAT
 ========================= */
 
-function formatTime(ms) {
-
-  if (!ms || ms < 0) return "0:00";
+function formatMs(ms) {
 
   const totalSeconds = Math.floor(ms / 1000);
 
@@ -134,88 +107,86 @@ function formatTime(ms) {
 
   const seconds = totalSeconds % 60;
 
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return `${minutes}:${seconds
+    .toString()
+    .padStart(2, '0')}`;
 }
 
+/* =========================
+   DURATION TO MILLISECONDS
+========================= */
 
 function durationToMs(duration) {
 
-  if (!duration || typeof duration !== "string") {
-    return 0;
+  if (!duration || duration === 'Unknown') return 0;
+
+  const parts = duration.split(':').map(Number);
+
+  if (parts.length === 2) {
+
+    return (
+      parts[0] * 60 +
+      parts[1]
+    ) * 1000;
+
   }
-
-  const parts = duration.split(":").map(Number);
-
-  if (parts.some(isNaN)) return 0;
-
-  let seconds = 0;
 
   if (parts.length === 3) {
 
-    seconds =
+    return (
       parts[0] * 3600 +
       parts[1] * 60 +
-      parts[2];
-
-  } else if (parts.length === 2) {
-
-    seconds =
-      parts[0] * 60 +
-      parts[1];
-
-  } else {
-
-    seconds = parts[0];
+      parts[2]
+    ) * 1000;
 
   }
 
-  return seconds * 1000;
+  return 0;
 }
 
+/* =========================
+   PROGRESS BAR
+========================= */
 
-function createProgressBar(currentMs, duration) {
+function createProgressBar(current, duration) {
 
-  const totalMs = durationToMs(duration);
+  const total = durationToMs(duration);
 
-  if (!totalMs) {
+  if (!total) {
 
-    return "`🔘▬▬▬▬▬▬▬▬▬▬`";
+    return `🔘▬▬▬▬▬▬▬▬▬▬  ${formatMs(current)} / ${duration}`;
 
   }
 
-  const percentage = Math.min(
-    Math.max(currentMs / totalMs, 0),
+  const progress = Math.min(
+    Math.max(current / total, 0),
     1
   );
 
-  const size = 12;
+  const size = 10;
 
   const position = Math.round(
-    percentage * size
+    progress * size
   );
 
-  let bar = "";
+  let bar = '';
 
-  for (let i = 0; i <= size; i++) {
+  for (let i = 0; i < size; i++) {
 
     if (i === position) {
 
-      bar += "🔘";
+      bar += '🔘';
 
     } else {
 
-      bar += "▬";
+      bar += '▬';
 
     }
 
   }
 
-  return (
-    `\`${bar}\`\n` +
-    `\`${formatTime(currentMs)} / ${duration}\``
-  );
+  return `${bar}\n${formatMs(current)} / ${duration}`;
 }
-
 
 /* =========================
    MUSIC EMBED
@@ -223,57 +194,52 @@ function createProgressBar(currentMs, duration) {
 
 function createMusicEmbed(data) {
 
-  if (!data.current) return null;
-
   const song = data.current;
 
-  const playback =
+  if (!song) return null;
+
+  const current =
     data.resource?.playbackDuration || 0;
 
   const progress =
     createProgressBar(
-      playback,
+      current,
       song.duration
     );
 
   const volume =
     Math.round(data.volume * 100);
 
-  const loopStatus =
-    data.loop ? "ON 🔁" : "OFF";
+  const loop =
+    data.loop
+      ? 'ON'
+      : 'OFF';
 
-  const status =
-    data.player.state.status === AudioPlayerStatus.Paused
-      ? "⏸️ PAUSED"
-      : "▶️ NOW PLAYING";
+  const embed =
+    new EmbedBuilder()
 
-  const embed = new EmbedBuilder()
+      .setTitle('🎵 NOW PLAYING')
 
-    .setTitle(`🎵 ${status}`)
+      .setDescription(
+        `**${song.title}**\n\n` +
+        `${progress}\n\n` +
+        `🔊 Volume: **${volume}%**\n` +
+        `🔁 Loop: **${loop}**\n` +
+        `📋 Queue: **${data.queue.length}**`
+      )
 
-    .setDescription(
-
-      `**[${song.title}](${song.url})**
-
-${progress}
-
-🔊 **Volume:** \`${volume}%\`
-
-🔁 **Loop:** \`${loopStatus}\``
-
-    )
-
-    .setColor("#ff007f");
+      .setColor('#ff007f');
 
   if (song.thumbnail) {
 
-    embed.setThumbnail(song.thumbnail);
+    embed.setThumbnail(
+      song.thumbnail
+    );
 
   }
 
   return embed;
 }
-
 
 /* =========================
    BUTTONS
@@ -281,79 +247,66 @@ ${progress}
 
 function createButtons() {
 
-  return [
-
+  const row =
     new ActionRowBuilder()
       .addComponents(
 
         new ButtonBuilder()
-          .setCustomId("skip")
-          .setLabel("Skip")
-          .setEmoji("⏩")
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId("pause_resume")
-          .setLabel("Pause / Resume")
-          .setEmoji("⏯️")
+          .setCustomId('pause')
+          .setLabel('Pause')
+          .setEmoji('⏯️')
           .setStyle(ButtonStyle.Primary),
 
         new ButtonBuilder()
-          .setCustomId("volume")
-          .setLabel("Volume")
-          .setEmoji("🔊")
-          .setStyle(ButtonStyle.Success),
-
-        new ButtonBuilder()
-          .setCustomId("loop")
-          .setLabel("Loop")
-          .setEmoji("🔁")
+          .setCustomId('skip')
+          .setLabel('Skip')
+          .setEmoji('⏩')
           .setStyle(ButtonStyle.Secondary),
 
-      )
+        new ButtonBuilder()
+          .setCustomId('loop')
+          .setLabel('Loop')
+          .setEmoji('🔁')
+          .setStyle(ButtonStyle.Secondary),
 
-  ];
+        new ButtonBuilder()
+          .setCustomId('volume')
+          .setLabel('Volume')
+          .setEmoji('🔊')
+          .setStyle(ButtonStyle.Success)
 
+      );
+
+  return [row];
 }
-
 
 /* =========================
    UPDATE MESSAGE
 ========================= */
 
-async function updateMusicMessage(data) {
+async function updateMessage(data) {
 
-  if (!data.message) return;
-
-  if (!data.current) return;
+  if (
+    !data.message ||
+    !data.current
+  ) return;
 
   try {
 
-    const embed =
-      createMusicEmbed(data);
-
-    if (!embed) return;
-
     await data.message.edit({
 
-      embeds: [embed],
+      embeds: [
+        createMusicEmbed(data)
+      ],
 
       components:
-        createButtons(),
+        createButtons()
 
     });
 
-  } catch (error) {
-
-    console.error(
-      "MESSAGE UPDATE ERROR:",
-      error.message
-    );
-
-  }
+  } catch (error) {}
 
 }
-
 
 /* =========================
    CREATE PLAYER
@@ -370,12 +323,11 @@ function createPlayer(
       behaviors: {
 
         noSubscriber:
-          NoSubscriberBehavior.Play,
+          NoSubscriberBehavior.Play
 
-      },
+      }
 
     });
-
 
   const data = {
 
@@ -389,133 +341,131 @@ function createPlayer(
 
     queue: [],
 
-    volume: 0.5,
+    volume: 1,
 
     loop: false,
 
     message: null,
 
-    updateInterval: null,
-
-    channel: null,
+    updateInterval: null
 
   };
-
 
   players.set(
     guildId,
     data
   );
 
+  connection.subscribe(
+    player
+  );
 
   player.on(
     AudioPlayerStatus.Idle,
-
     async () => {
 
-      const music =
-        players.get(guildId);
-
-      if (!music) return;
-
-
-      if (
-        music.loop &&
-        music.current
-      ) {
-
-        await playSong(
-          guildId,
-          music.current
-        );
-
-        return;
-
-      }
-
-
-      if (
-        music.queue.length > 0
-      ) {
-
-        const nextSong =
-          music.queue.shift();
-
-        await playSong(
-          guildId,
-          nextSong
-        );
-
-      } else {
-
-        music.current = null;
-
-        music.resource = null;
-
-
-        if (
-          music.updateInterval
-        ) {
-
-          clearInterval(
-            music.updateInterval
-          );
-
-          music.updateInterval = null;
-
-        }
-
-
-        /*
-          IMPORTANT:
-          Bot stays connected.
-        */
-
-        if (music.message) {
-
-          try {
-
-            await music.message.edit({
-
-              content:
-                "🏁 **Queue finished.**\n\nThe bot is still connected to the voice channel.",
-
-              embeds: [],
-
-              components: [],
-
-            });
-
-          } catch {}
-
-        }
-
-      }
-
-    }
-
-  );
-
-
-  player.on(
-    "error",
-
-    error => {
-
-      console.error(
-        "AUDIO PLAYER ERROR:",
-        error.message
+      await playNext(
+        guildId
       );
 
     }
-
   );
 
+  player.on(
+    'error',
+    async error => {
+
+      console.error(
+        'PLAYER ERROR:',
+        error.message
+      );
+
+      await playNext(
+        guildId
+      );
+
+    }
+  );
 
   return data;
-
 }
 
+/* =========================
+   PLAY NEXT
+========================= */
+
+async function playNext(
+  guildId
+) {
+
+  const data =
+    players.get(guildId);
+
+  if (!data) return;
+
+  if (
+    data.updateInterval
+  ) {
+
+    clearInterval(
+      data.updateInterval
+    );
+
+    data.updateInterval =
+      null;
+
+  }
+
+  if (
+    data.loop &&
+    data.current
+  ) {
+
+    return playSong(
+      guildId,
+      data.current
+    );
+
+  }
+
+  if (
+    data.queue.length === 0
+  ) {
+
+    data.current = null;
+
+    if (data.message) {
+
+      try {
+
+        await data.message.edit({
+
+          content:
+            '🏁 **Queue finished.**\nThe bot is still connected to the voice channel.',
+
+          embeds: [],
+
+          components: []
+
+        });
+
+      } catch (error) {}
+
+    }
+
+    return;
+
+  }
+
+  const next =
+    data.queue.shift();
+
+  await playSong(
+    guildId,
+    next
+  );
+
+}
 
 /* =========================
    PLAY SONG
@@ -531,22 +481,19 @@ async function playSong(
 
   if (!data) return;
 
-
   try {
 
-    data.current = song;
-
+    data.current =
+      song;
 
     console.log(
-      `▶ Playing: ${song.title}`
+      `Playing: ${song.title}`
     );
-
 
     const stream =
       await play.stream(
         song.url
       );
-
 
     const resource =
       createAudioResource(
@@ -557,30 +504,26 @@ async function playSong(
             stream.type,
 
           inlineVolume:
-            true,
+            true
 
         }
       );
 
-
-    resource.volume?.setVolume(
-      data.volume
-    );
-
+    resource.volume
+      ?.setVolume(
+        data.volume
+      );
 
     data.resource =
       resource;
-
 
     data.player.play(
       resource
     );
 
-
-    await updateMusicMessage(
+    await updateMessage(
       data
     );
-
 
     if (
       data.updateInterval
@@ -592,212 +535,72 @@ async function playSong(
 
     }
 
-
     data.updateInterval =
-      setInterval(() => {
+      setInterval(
+        () => {
 
-        if (
-          data.current &&
-          data.message
-        ) {
+          if (
+            data.player.state.status ===
+            AudioPlayerStatus.Playing
+          ) {
 
-          updateMusicMessage(
-            data
-          ).catch(() => {});
+            updateMessage(data)
+              .catch(() => {});
 
-        }
+          }
 
-      }, 2000);
+        },
 
+        3000
+      );
 
   } catch (error) {
 
     console.error(
-      "PLAY ERROR:",
+      'PLAY ERROR:',
       error
     );
 
-
-    if (
-      data.channel
-    ) {
-
-      data.channel.send(
-        "❌ I couldn't play this song. Try another YouTube video or song."
-      ).catch(() => {});
-
-    }
-
-
-    /*
-      Try next song.
-    */
-
-    if (
-      data.queue.length > 0
-    ) {
-
-      const next =
-        data.queue.shift();
-
-      await playSong(
-        guildId,
-        next
-      );
-
-    } else {
-
-      data.current = null;
-
-    }
-
-  }
-
-}
-
-
-/* =========================
-   FIND SONG
-========================= */
-
-async function findSong(query) {
-
-  let results;
-
-
-  if (
-    query.startsWith(
-      "https://"
-    ) ||
-    query.startsWith(
-      "http://"
-    )
-  ) {
-
-    const info =
-      await play.video_basic_info(
-        query
-      );
-
-    const video =
-      info.video_details;
-
-
-    return {
-
-      title:
-        video.title,
-
-      url:
-        video.url,
-
-      thumbnail:
-        video.thumbnails?.at(-1)?.url ||
-        "",
-
-      duration:
-        video.durationRaw ||
-        video.durationInSec
-          ? `${Math.floor(video.durationInSec / 60)}:${String(video.durationInSec % 60).padStart(2, "0")}`
-          : "Unknown",
-
-    };
-
-  }
-
-
-  results =
-    await play.search(
-      query,
-      {
-
-        limit: 1,
-
-        source: {
-
-          youtube: "video",
-
-        },
-
-      }
+    await playNext(
+      guildId
     );
 
-
-  if (
-    !results ||
-    results.length === 0
-  ) {
-
-    return null;
-
   }
-
-
-  const video =
-    results[0];
-
-
-  return {
-
-    title:
-      video.title ||
-      "Unknown Song",
-
-    url:
-      video.url,
-
-    thumbnail:
-      video.thumbnails?.at(-1)?.url ||
-      "",
-
-    duration:
-      video.durationRaw ||
-      "Unknown",
-
-  };
 
 }
 
-
 /* =========================
-   READY
+   BOT READY
 ========================= */
 
 client.once(
-  "clientReady",
-
+  'clientReady',
   async () => {
 
     console.log(
-      `✅ Bot Online: ${client.user.tag}`
+      `Bot Online: ${client.user.tag}`
     );
 
-
     client.user.setActivity(
-      "/play | Music",
+      '/play | Music',
       {
 
         type:
-          ActivityType.Listening,
+          ActivityType.Listening
 
       }
     );
 
-
     const rest =
       new REST({
-
-        version: "10",
-
+        version: '10'
       }).setToken(TOKEN);
-
 
     try {
 
       console.log(
-        "🔄 Loading slash commands..."
+        'Loading slash commands...'
       );
-
 
       await rest.put(
 
@@ -808,46 +611,40 @@ client.once(
         {
 
           body:
-            commands,
+            commands
 
         }
 
       );
 
-
       console.log(
-        "✅ Slash Commands Loaded!"
+        'Slash Commands Loaded!'
       );
 
     } catch (error) {
 
       console.error(
-        "COMMAND ERROR:",
         error
       );
 
     }
 
   }
-
 );
-
 
 /* =========================
    INTERACTIONS
 ========================= */
 
 client.on(
-  "interactionCreate",
-
+  'interactionCreate',
   async interaction => {
 
     try {
 
-
-      /* =========================
+      /* =====================
          SLASH COMMANDS
-      ========================= */
+      ===================== */
 
       if (
         interaction.isChatInputCommand()
@@ -856,103 +653,331 @@ client.on(
         const command =
           interaction.commandName;
 
-
-        /*
-          HELP
-          Works in DM and Server
-        */
+        /* ===== PLAY ===== */
 
         if (
-          command === "help"
+          command === 'play'
         ) {
 
-          const embed =
-            new EmbedBuilder()
+          const voiceChannel =
+            interaction.member
+              .voice
+              .channel;
 
-              .setTitle(
-                "📖 Music Bot Help"
-              )
+          if (
+            !voiceChannel
+          ) {
 
-              .setDescription(
+            return interaction.reply({
 
-`🎵 **Music Commands**
+              content:
+                '❌ Join a Voice Channel first!',
 
-\`/play <song>\`
-Play a song or add it to the queue.
+              flags:
+                MessageFlags.Ephemeral
 
-\`/connect\`
-Connect the bot to your voice channel.
+            });
 
-\`/disconnect\`
-Disconnect the bot.
+          }
 
-\`/skip\`
-Skip the current song.
+          await interaction.deferReply();
 
-\`/pause\`
-Pause the song.
+          const query =
+            interaction.options
+              .getString('song');
 
-\`/resume\`
-Resume the song.
+          let results;
 
-\`/volume <1-100>\`
-Change the music volume.
+          try {
 
-\`/loop\`
-Turn loop on or off.
+            results =
+              await play.search(
+                query,
+                {
 
-\`/invite\`
-Get the bot invite link.
+                  limit: 1,
 
----
+                  source: {
 
-🎛️ **Buttons**
+                    youtube:
+                      'video'
 
-⏩ Skip  
-⏯️ Pause / Resume  
-🔊 Volume  
-🔁 Loop
+                  }
 
-🏁 When the queue finishes, the bot stays connected to the voice channel.`
-
-              )
-
-              .setColor(
-                "#00ff7f"
+                }
               );
 
+          } catch (error) {
 
-          return interaction.reply({
+            console.error(
+              error
+            );
 
-            embeds: [embed],
+            return interaction.editReply(
+              '❌ Could not search for that song.'
+            );
+
+          }
+
+          if (
+            !results ||
+            results.length === 0
+          ) {
+
+            return interaction.editReply(
+              '❌ Song not found.'
+            );
+
+          }
+
+          const video =
+            results[0];
+
+          const song = {
+
+            title:
+              video.title,
+
+            url:
+              video.url,
+
+            thumbnail:
+              video.thumbnails
+                ?.at(-1)
+                ?.url || '',
+
+            duration:
+              video.durationRaw ||
+              'Unknown'
+
+          };
+
+          let connection =
+            getVoiceConnection(
+              interaction.guild.id
+            );
+
+          /* =====================
+             AUTO JOIN CALL
+          ===================== */
+
+          if (
+            !connection
+          ) {
+
+            connection =
+              joinVoiceChannel({
+
+                channelId:
+                  voiceChannel.id,
+
+                guildId:
+                  interaction.guild.id,
+
+                adapterCreator:
+                  interaction.guild
+                    .voiceAdapterCreator,
+
+                selfDeaf:
+                  true
+
+              });
+
+            try {
+
+              await entersState(
+
+                connection,
+
+                VoiceConnectionStatus.Ready,
+
+                30_000
+
+              );
+
+            } catch (error) {
+
+              connection.destroy();
+
+              return interaction.editReply(
+                '❌ Failed to join the Voice Channel.'
+              );
+
+            }
+
+          }
+
+          let data =
+            players.get(
+              interaction.guild.id
+            );
+
+          if (
+            !data
+          ) {
+
+            data =
+              createPlayer(
+
+                interaction.guild.id,
+
+                connection
+
+              );
+
+          }
+
+          /* =====================
+             QUEUE
+          ===================== */
+
+          if (
+            data.current
+          ) {
+
+            data.queue.push(
+              song
+            );
+
+            return interaction.editReply(
+
+              `➕ Added to queue:\n**${song.title}**`
+
+            );
+
+          }
+
+          /* =====================
+             PLAY
+          ===================== */
+
+          await playSong(
+
+            interaction.guild.id,
+
+            song
+
+          );
+
+          const embed =
+            createMusicEmbed(
+              data
+            );
+
+          await interaction.editReply({
+
+            embeds: [
+              embed
+            ],
+
+            components:
+              createButtons()
 
           });
 
+          data.message =
+            await interaction.fetchReply();
+
         }
 
-
-        /*
-          INVITE
-          Works in DM and Server
-        */
+        /* ===== SKIP ===== */
 
         if (
-          command === "invite"
+          command === 'skip'
+        ) {
+
+          const data =
+            players.get(
+              interaction.guild.id
+            );
+
+          if (
+            !data?.current
+          ) {
+
+            return interaction.reply({
+
+              content:
+                '❌ No song is playing.',
+
+              flags:
+                MessageFlags.Ephemeral
+
+            });
+
+          }
+
+          data.player.stop();
+
+          return interaction.reply(
+            '⏩ Song skipped!'
+          );
+
+        }
+
+        /* ===== DISCONNECT ===== */
+
+        if (
+          command ===
+          'disconnect'
+        ) {
+
+          const connection =
+            getVoiceConnection(
+              interaction.guild.id
+            );
+
+          const data =
+            players.get(
+              interaction.guild.id
+            );
+
+          if (
+            data?.updateInterval
+          ) {
+
+            clearInterval(
+              data.updateInterval
+            );
+
+          }
+
+          if (
+            connection
+          ) {
+
+            connection.destroy();
+
+          }
+
+          players.delete(
+            interaction.guild.id
+          );
+
+          return interaction.reply(
+            '👋 Disconnected from the Voice Channel.'
+          );
+
+        }
+
+        /* ===== INVITE ===== */
+
+        if (
+          command ===
+          'invite'
         ) {
 
           const inviteUrl =
-            `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot%20applications.commands`;
-
+            `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot%20applications.commands`;
 
           const row =
             new ActionRowBuilder()
-
               .addComponents(
 
                 new ButtonBuilder()
 
                   .setLabel(
-                    "Add Bot to Discord"
+                    'Add Bot to Discord'
                   )
 
                   .setStyle(
@@ -965,684 +990,238 @@ Get the bot invite link.
 
               );
 
-
           return interaction.reply({
 
             content:
-              "🔗 **Invite the bot to your Discord server:**",
+              '🔗 Add the bot to your server:',
 
             components:
-              [row],
+              [row]
 
           });
 
         }
 
-
-        /*
-          Other commands require server
-        */
+        /* ===== CLEAN ===== */
 
         if (
-          !interaction.guild
+          command ===
+          'clean'
         ) {
+
+          await interaction.channel
+            .bulkDelete(
+              100,
+              true
+            )
+            .catch(
+              () => {}
+            );
 
           return interaction.reply({
 
             content:
-              "❌ Music commands can only be used inside a Discord server.",
+              '🧹 Messages cleaned!',
 
             flags:
-              MessageFlags.Ephemeral,
+              MessageFlags.Ephemeral
 
           });
 
         }
 
-
-        const guildId =
-          interaction.guild.id;
-
-
-        /*
-          PLAY
-        */
+        /* ===== HELP ===== */
 
         if (
-          command === "play"
+          command ===
+          'help'
         ) {
-
-          const voiceChannel =
-            interaction.member.voice.channel;
-
-
-          if (!voiceChannel) {
-
-            return interaction.reply({
-
-              content:
-                "❌ Join a voice channel first!",
-
-              flags:
-                MessageFlags.Ephemeral,
-
-            });
-
-          }
-
-
-          await interaction.deferReply();
-
-
-          const query =
-            interaction.options.getString(
-              "song"
-            );
-
-
-          let song;
-
-
-          try {
-
-            song =
-              await findSong(
-                query
-              );
-
-          } catch (error) {
-
-            console.error(
-              "SEARCH ERROR:",
-              error
-            );
-
-
-            return interaction.editReply(
-              "❌ Failed to search YouTube. Please try another song."
-            );
-
-          }
-
-
-          if (!song) {
-
-            return interaction.editReply(
-              "❌ No song found."
-            );
-
-          }
-
-
-          let connection =
-            getVoiceConnection(
-              guildId
-            );
-
-
-          if (!connection) {
-
-            connection =
-              joinVoiceChannel({
-
-                channelId:
-                  voiceChannel.id,
-
-                guildId,
-
-                adapterCreator:
-                  interaction.guild.voiceAdapterCreator,
-
-                selfDeaf:
-                  true,
-
-              });
-
-
-            await entersState(
-
-              connection,
-
-              VoiceConnectionStatus.Ready,
-
-              30000
-
-            );
-
-          }
-
-
-          let data =
-            players.get(
-              guildId
-            );
-
-
-          if (!data) {
-
-            data =
-              createPlayer(
-                guildId,
-                connection
-              );
-
-
-            connection.subscribe(
-              data.player
-            );
-
-          }
-
-
-          data.connection =
-            connection;
-
-
-          data.channel =
-            interaction.channel;
-
-
-          if (
-            data.current
-          ) {
-
-            data.queue.push(
-              song
-            );
-
-
-            return interaction.editReply(
-              `➕ **${song.title}** added to the queue.`
-            );
-
-          }
-
-
-          data.current =
-            song;
-
 
           const embed =
-            createMusicEmbed(
-              data
-            );
+            new EmbedBuilder()
 
+              .setTitle(
+                '🎵 Music Bot Help'
+              )
 
-          await interaction.editReply({
+              .setDescription(
 
-            embeds:
-              embed
-                ? [embed]
-                : [],
+                '`/play <song>` - Play a song\n\n' +
 
-            components:
-              createButtons(),
+                '`/skip` - Skip current song\n\n' +
 
-          });
+                '`/disconnect` - Leave Voice Channel\n\n' +
 
+                '`/clean` - Delete messages\n\n' +
 
-          data.message =
-            await interaction.fetchReply();
+                '`/invite` - Invite the bot\n\n' +
 
+                '`/help` - Show this menu'
 
-          await playSong(
-            guildId,
-            song
-          );
+              )
 
-
-          return;
-
-        }
-
-
-        /*
-          CONNECT
-        */
-
-        if (
-          command === "connect"
-        ) {
-
-          const voiceChannel =
-            interaction.member.voice.channel;
-
-
-          if (!voiceChannel) {
-
-            return interaction.reply({
-
-              content:
-                "❌ Join a voice channel first!",
-
-              flags:
-                MessageFlags.Ephemeral,
-
-            });
-
-          }
-
-
-          let connection =
-            getVoiceConnection(
-              guildId
-            );
-
-
-          if (!connection) {
-
-            connection =
-              joinVoiceChannel({
-
-                channelId:
-                  voiceChannel.id,
-
-                guildId,
-
-                adapterCreator:
-                  interaction.guild.voiceAdapterCreator,
-
-                selfDeaf:
-                  true,
-
-              });
-
-
-            await entersState(
-
-              connection,
-
-              VoiceConnectionStatus.Ready,
-
-              30000
-
-            );
-
-          }
-
-
-          return interaction.reply(
-            `🎤 Connected to **${voiceChannel.name}**`
-          );
-
-        }
-
-
-        /*
-          DISCONNECT
-        */
-
-        if (
-          command === "disconnect"
-        ) {
-
-          const connection =
-            getVoiceConnection(
-              guildId
-            );
-
-
-          if (connection) {
-
-            connection.destroy();
-
-          }
-
-
-          const data =
-            players.get(
-              guildId
-            );
-
-
-          if (
-            data?.updateInterval
-          ) {
-
-            clearInterval(
-              data.updateInterval
-            );
-
-          }
-
-
-          players.delete(
-            guildId
-          );
-
-
-          return interaction.reply(
-            "👋 Disconnected from the voice channel."
-          );
-
-        }
-
-
-        const data =
-          players.get(
-            guildId
-          );
-
-
-        if (
-          !data ||
-          !data.current
-        ) {
+              .setColor(
+                '#ff007f'
+              );
 
           return interaction.reply({
 
-            content:
-              "❌ No music is currently playing.",
-
-            flags:
-              MessageFlags.Ephemeral,
+            embeds:
+              [embed]
 
           });
-
-        }
-
-
-        /*
-          SKIP
-        */
-
-        if (
-          command === "skip"
-        ) {
-
-          data.player.stop();
-
-          return interaction.reply(
-            "⏩ Skipped the current song."
-          );
-
-        }
-
-
-        /*
-          PAUSE
-        */
-
-        if (
-          command === "pause"
-        ) {
-
-          data.player.pause();
-
-          await updateMusicMessage(
-            data
-          );
-
-
-          return interaction.reply(
-            "⏸️ Music paused."
-          );
-
-        }
-
-
-        /*
-          RESUME
-        */
-
-        if (
-          command === "resume"
-        ) {
-
-          data.player.unpause();
-
-          await updateMusicMessage(
-            data
-          );
-
-
-          return interaction.reply(
-            "▶️ Music resumed."
-          );
-
-        }
-
-
-        /*
-          VOLUME
-        */
-
-        if (
-          command === "volume"
-        ) {
-
-          const amount =
-            interaction.options.getInteger(
-              "amount"
-            );
-
-
-          data.volume =
-            amount / 100;
-
-
-          if (
-            data.resource?.volume
-          ) {
-
-            data.resource.volume.setVolume(
-              data.volume
-            );
-
-          }
-
-
-          await updateMusicMessage(
-            data
-          );
-
-
-          return interaction.reply(
-            `🔊 Volume set to **${amount}%**`
-          );
-
-        }
-
-
-        /*
-          LOOP
-        */
-
-        if (
-          command === "loop"
-        ) {
-
-          data.loop =
-            !data.loop;
-
-
-          await updateMusicMessage(
-            data
-          );
-
-
-          return interaction.reply(
-
-            data.loop
-              ? "🔁 Loop enabled."
-              : "❌ Loop disabled."
-
-          );
 
         }
 
       }
 
-
-      /* =========================
+      /* =====================
          BUTTONS
-      ========================= */
+      ===================== */
 
       if (
         interaction.isButton()
       ) {
-
-        if (
-          !interaction.guild
-        ) return;
-
 
         const data =
           players.get(
             interaction.guild.id
           );
 
-
         if (
-          !data ||
-          !data.current
+          !data?.current
         ) {
 
           return interaction.reply({
 
             content:
-              "❌ No music is currently playing.",
+              '❌ No song is playing.',
 
             flags:
-              MessageFlags.Ephemeral,
+              MessageFlags.Ephemeral
 
           });
 
         }
 
-
-        /*
-          SKIP BUTTON
-        */
+        /* PAUSE / RESUME */
 
         if (
           interaction.customId ===
-          "skip"
-        ) {
-
-          data.player.stop();
-
-
-          return interaction.reply({
-
-            content:
-              "⏩ Skipped.",
-
-            flags:
-              MessageFlags.Ephemeral,
-
-          });
-
-        }
-
-
-        /*
-          PAUSE / RESUME
-        */
-
-        if (
-          interaction.customId ===
-          "pause_resume"
+          'pause'
         ) {
 
           if (
-
             data.player.state.status ===
             AudioPlayerStatus.Paused
-
           ) {
 
             data.player.unpause();
+
+            await interaction.reply({
+
+              content:
+                '▶️ Resumed!',
+
+              flags:
+                MessageFlags.Ephemeral
+
+            });
 
           } else {
 
             data.player.pause();
 
+            await interaction.reply({
+
+              content:
+                '⏸️ Paused!',
+
+              flags:
+                MessageFlags.Ephemeral
+
+            });
+
           }
 
+        }
 
-          await updateMusicMessage(
-            data
-          );
+        /* SKIP */
 
+        if (
+          interaction.customId ===
+          'skip'
+        ) {
 
-          return interaction.reply({
+          data.player.stop();
+
+          await interaction.reply({
 
             content:
-              "⏯️ Playback updated.",
+              '⏩ Skipped!',
 
             flags:
-              MessageFlags.Ephemeral,
+              MessageFlags.Ephemeral
 
           });
 
         }
 
-
-        /*
-          LOOP
-        */
+        /* LOOP */
 
         if (
           interaction.customId ===
-          "loop"
+          'loop'
         ) {
 
           data.loop =
             !data.loop;
 
-
-          await updateMusicMessage(
+          await updateMessage(
             data
           );
 
-
-          return interaction.reply({
+          await interaction.reply({
 
             content:
-
               data.loop
-                ? "🔁 Loop enabled."
-                : "❌ Loop disabled.",
+                ? '🔁 Loop enabled!'
+                : '❌ Loop disabled!',
 
             flags:
-              MessageFlags.Ephemeral,
+              MessageFlags.Ephemeral
 
           });
 
         }
 
-
-        /*
-          VOLUME MODAL
-        */
+        /* VOLUME */
 
         if (
           interaction.customId ===
-          "volume"
+          'volume'
         ) {
 
           const modal =
             new ModalBuilder()
 
               .setCustomId(
-                "volume_modal"
+                'volume_modal'
               )
 
               .setTitle(
-                "Change Volume"
+                'Change Volume'
               );
-
 
           const input =
             new TextInputBuilder()
 
               .setCustomId(
-                "volume_input"
+                'volume_input'
               )
 
               .setLabel(
-                "Volume (1 - 100)"
+                'Volume (1 - 100)'
               )
 
               .setStyle(
@@ -1651,25 +1230,17 @@ Get the bot invite link.
 
               .setRequired(
                 true
-              )
-
-              .setPlaceholder(
-                "50"
               );
-
 
           const row =
             new ActionRowBuilder()
-
               .addComponents(
                 input
               );
 
-
           modal.addComponents(
             row
           );
-
 
           return interaction.showModal(
             modal
@@ -1679,93 +1250,85 @@ Get the bot invite link.
 
       }
 
-
-      /* =========================
+      /* =====================
          VOLUME MODAL
-      ========================= */
+      ===================== */
 
       if (
         interaction.isModalSubmit()
       ) {
 
         if (
-
           interaction.customId ===
-          "volume_modal"
-
+          'volume_modal'
         ) {
+
+          const value =
+            parseInt(
+
+              interaction.fields
+                .getTextInputValue(
+                  'volume_input'
+                )
+
+            );
+
+          if (
+            isNaN(value) ||
+            value < 1 ||
+            value > 100
+          ) {
+
+            return interaction.reply({
+
+              content:
+                '❌ Enter a number from 1 to 100.',
+
+              flags:
+                MessageFlags.Ephemeral
+
+            });
+
+          }
 
           const data =
             players.get(
               interaction.guild.id
             );
 
-
-          if (!data) {
-
-            return interaction.reply({
-
-              content:
-                "❌ No music is playing.",
-
-              flags:
-                MessageFlags.Ephemeral,
-
-            });
-
-          }
-
-
-          const value =
-            parseInt(
-
-              interaction.fields.getTextInputValue(
-                "volume_input"
-              )
-
-            );
-
-
           if (
-
-            isNaN(value) ||
-            value < 1 ||
-            value > 100
-
+            !data
           ) {
 
             return interaction.reply({
 
               content:
-                "❌ Enter a number between 1 and 100.",
+                '❌ No song is playing.',
 
               flags:
-                MessageFlags.Ephemeral,
+                MessageFlags.Ephemeral
 
             });
 
           }
 
-
           data.volume =
             value / 100;
-
 
           if (
             data.resource?.volume
           ) {
 
-            data.resource.volume.setVolume(
-              data.volume
-            );
+            data.resource.volume
+              .setVolume(
+                data.volume
+              );
 
           }
 
-
-          await updateMusicMessage(
+          await updateMessage(
             data
           );
-
 
           return interaction.reply({
 
@@ -1773,7 +1336,7 @@ Get the bot invite link.
               `🔊 Volume set to **${value}%**`,
 
             flags:
-              MessageFlags.Ephemeral,
+              MessageFlags.Ephemeral
 
           });
 
@@ -1784,57 +1347,17 @@ Get the bot invite link.
     } catch (error) {
 
       console.error(
-        "INTERACTION ERROR:",
+        'INTERACTION ERROR:',
         error
       );
-
-
-      if (
-        interaction.isRepliable()
-      ) {
-
-        try {
-
-          if (
-
-            interaction.deferred ||
-            interaction.replied
-
-          ) {
-
-            await interaction.editReply(
-              "❌ An error occurred."
-            );
-
-          } else {
-
-            await interaction.reply({
-
-              content:
-                "❌ An error occurred.",
-
-              flags:
-                MessageFlags.Ephemeral,
-
-            });
-
-          }
-
-        } catch {}
-
-      }
 
     }
 
   }
-
 );
-
 
 /* =========================
    LOGIN
 ========================= */
 
-client.login(
-  TOKEN
-);
+client.login(TOKEN);
