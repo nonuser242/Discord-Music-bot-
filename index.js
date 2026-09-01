@@ -15,6 +15,11 @@ const {
 } = require('@discordjs/voice');
 const play = require('@iamtraction/play-dl');
 
+// Deji User-Agent iyo Client si uu u dhaafo block-ka YouTube
+play.setToken({
+  useragent: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36']
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -30,10 +35,10 @@ const players = new Map();
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Ku daar hees Voice Call-ka (SoundCloud).')
+    .setDescription('Ku daar hees Voice Call-ka.')
     .addStringOption(option =>
       option.setName('song')
-        .setDescription('Magaca heesta aad rabto')
+        .setDescription('Magaca heesta ama Linkiga')
         .setRequired(true)),
 
   new SlashCommandBuilder()
@@ -99,18 +104,15 @@ client.on('interactionCreate', async interaction => {
     const songInput = interaction.options.getString('song');
 
     try {
-      // Raadinta SoundCloud oo aan u baahnayn cookies
-      const searchResults = await play.search(songInput, { 
-        limit: 1, 
-        source: { soundcloud: 'tracks' } 
-      });
+      // Isku day YT raadin leh custom header
+      const searchResults = await play.search(songInput, { limit: 1 });
 
       if (!searchResults || searchResults.length === 0) {
-        return interaction.editReply('❌ Wax hees ah looma helin magacaas SoundCloud-ka!');
+        return interaction.editReply('❌ Wax hees ah looma helin!');
       }
 
-      const track = searchResults[0];
-      const stream = await play.stream_from_info(track);
+      const video = searchResults[0];
+      const stream = await play.stream(video.url, { discordPlayerCompatibility: true });
 
       let connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
@@ -134,15 +136,15 @@ client.on('interactionCreate', async interaction => {
       player.play(resource);
 
       const embed = new EmbedBuilder()
-        .setTitle('🎶 Now Playing (SoundCloud)')
-        .setDescription(`**[${track.name}](${track.url})**`)
-        .setThumbnail(track.thumbnail)
-        .setColor('#ff5500');
+        .setTitle('🎶 Now Playing')
+        .setDescription(`**[${video.title}](${video.url})**`)
+        .setThumbnail(video.thumbnails[0]?.url)
+        .setColor('#00ff7f');
 
       return interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      console.error(error);
-      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta!');
+      console.error('PLAY ERROR:', error);
+      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! Dhibaatadu waa IP-ga server-ka.');
     }
   }
 
@@ -181,7 +183,7 @@ client.on('interactionCreate', async interaction => {
       .setColor('#0099ff')
       .setDescription('Amarrada bot-ka:')
       .addFields(
-        { name: '/play <Magac>', value: 'Ku daar hees Voice Call-ka.' },
+        { name: '/play <Magac/Link>', value: 'Ku daar hees Voice Call-ka.' },
         { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
         { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
         { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
