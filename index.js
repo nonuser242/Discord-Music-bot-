@@ -14,7 +14,6 @@ const {
   NoSubscriberBehavior 
 } = require('@discordjs/voice');
 const ytdl = require('@distube/ytdl-core');
-const yts = require('yt-search');
 
 const client = new Client({
   intents: [
@@ -34,7 +33,7 @@ const commands = [
     .setDescription('Ku daar hees Voice Call-ka.')
     .addStringOption(option =>
       option.setName('song')
-        .setDescription('Magaca heesta ama Link')
+        .setDescription('Linkiga heesta YouTube (URL)')
         .setRequired(true)),
 
   new SlashCommandBuilder()
@@ -97,17 +96,15 @@ client.on('interactionCreate', async interaction => {
     }
 
     await interaction.deferReply();
-    const songQuery = interaction.options.getString('song');
+    const songUrl = interaction.options.getString('song');
 
     try {
-      const searchResult = await yts(songQuery);
-      const video = searchResult.videos[0];
-
-      if (!video) {
-        return interaction.editReply('❌ Wax hees ah looma helin!');
+      if (!ytdl.validateURL(songUrl)) {
+        return interaction.editReply('❌ Fadlan soo gali Linkiga saxda ah ee YouTube-ka (URL)!');
       }
 
-      const stream = ytdl(video.url, {
+      const info = await ytdl.getInfo(songUrl);
+      const stream = ytdl.downloadFromInfo(info, {
         filter: 'audioonly',
         highWaterMark: 1 << 25,
         quality: 'highestaudio'
@@ -136,14 +133,14 @@ client.on('interactionCreate', async interaction => {
 
       const embed = new EmbedBuilder()
         .setTitle('🎶 Now Playing')
-        .setDescription(`**[${video.title}](${video.url})**\nDuration: \`${video.timestamp}\``)
-        .setThumbnail(video.thumbnail)
+        .setDescription(`**[${info.videoDetails.title}](${songUrl})**`)
+        .setThumbnail(info.videoDetails.thumbnails[0]?.url)
         .setColor('#00ff7f');
 
       return interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error(error);
-      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta!');
+      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! Hubi linkiga.');
     }
   }
 
@@ -182,7 +179,7 @@ client.on('interactionCreate', async interaction => {
       .setColor('#0099ff')
       .setDescription('Amarrada bot-ka:')
       .addFields(
-        { name: '/play <song>', value: 'Ku daar hees Voice Call-ka.' },
+        { name: '/play <YouTube URL>', value: 'Ku daar hees Voice Call-ka.' },
         { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
         { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
         { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
