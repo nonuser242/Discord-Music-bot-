@@ -4,9 +4,6 @@ const {
   REST, 
   Routes, 
   SlashCommandBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
   EmbedBuilder 
 } = require('discord.js');
 const { 
@@ -87,144 +84,164 @@ client.once('ready', () => {
 });
 
 client.on('interactionCreate', async interaction => {
-  if (interaction.isChatInputCommand()) {
-    const { commandName } = interaction;
+  if (!interaction.isChatInputCommand()) return;
 
-    if (commandName === 'play') {
-      const voiceChannel = interaction.member.voice.channel;
-      if (!voiceChannel) {
-        return interaction.reply({ content: '❌ Horta gal Voice Call!', flags: 64 });
-      }
+  const { commandName } = interaction;
 
-      // Defer-ka halkan ayaa la dhigay si looga baaqsado Error 10062
-      await interaction.deferReply();
-      const songQuery = interaction.options.getString('song');
+  // --- COMMAND: /play ---
+  if (commandName === 'play') {
+    const voiceChannel = interaction.member.voice.channel;
+    if (!voiceChannel) {
+      return interaction.reply({ content: '❌ Horta gal Voice Call!', flags: 64 });
+    }
 
-      try {
-        const results = await play.search(songQuery, { limit: 1 });
-        if (!results || results.length === 0) {
+    await interaction.deferReply();
+    const songQuery = interaction.options.getString('song');
+
+    try {
+      let stream;
+      let title = songQuery;
+      let songUrl = '';
+
+      // Tallaabada 1-aad: Ka raadi SoundCloud mar walba si looga fogaado YouTube IP Block
+      const scResults = await play.search(songQuery, { limit: 1, source: { soundcloud: 'tracks' } });
+      
+      if (scResults && scResults.length > 0) {
+        const track = scResults[0];
+        stream = await play.stream_from_info(track);
+        title = track.title;
+        songUrl = track.permalink || track.url;
+      } else {
+        // Tallaabada 2-aad: Haddii SoundCloud wax lagu waayo, YouTube ka raadi
+        const ytResults = await play.search(songQuery, { limit: 1 });
+        if (!ytResults || ytResults.length === 0) {
           return interaction.editReply('❌ Wax hees ah looma helin magacaas!');
         }
-
-        const video = results[0];
-        const stream = await play.stream(video.url);
-
-        let connection = getVoiceConnection(interaction.guild.id);
-        if (!connection) {
-          connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: interaction.guild.id,
-            adapterCreator: interaction.guild.voiceAdapterCreator,
-          });
-        }
-
-        let player = players.get(interaction.guild.id);
-        if (!player) {
-          player = createAudioPlayer({
-            behaviors: { noSubscriber: NoSubscriberBehavior.Play }
-          });
-          players.set(interaction.guild.id, player);
-          connection.subscribe(player);
-        }
-
-        const resource = createAudioResource(stream.stream, { inputType: stream.type });
-        player.play(resource);
-
-        const embed = new EmbedBuilder()
-          .setTitle('🎶 Now Playing')
-          .setDescription(`**[${video.title}](${video.url})**\nDuration: \`${video.durationRaw}\``)
-          .setColor('#00ff7f');
-
-        return interaction.editReply({ embeds: [embed] });
-      } catch (error) {
-        console.error(error);
-        return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta!');
-      }
-    }
-
-    if (commandName === 'connect') {
-      const voiceChannel = interaction.member.voice.channel;
-      if (!voiceChannel) {
-        return interaction.reply({ content: '❌ Horta gal Voice Call!', flags: 64 });
+        const video = ytResults[0];
+        stream = await play.stream(video.url);
+        title = video.title;
+        songUrl = video.url;
       }
 
-      joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: interaction.guild.id,
-        adapterCreator: interaction.guild.voiceAdapterCreator,
-      });
-
-      return interaction.reply(`✅ Bot-ku wuxuu ku xirmay: **${voiceChannel.name}**`);
-    }
-
-    if (commandName === 'disconnect') {
-      const connection = getVoiceConnection(interaction.guild.id);
+      let connection = getVoiceConnection(interaction.guild.id);
       if (!connection) {
-        return interaction.reply({ content: '❌ Bot-ku kuma jiro Voice Call!', flags: 64 });
+        connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: interaction.guild.id,
+          adapterCreator: interaction.guild.voiceAdapterCreator,
+        });
       }
 
-      connection.destroy();
-      players.delete(interaction.guild.id);
-      return interaction.reply('🔌 Bot-kii waa ka baxay Voice Call-ka.');
-    }
+      let player = players.get(interaction.guild.id);
+      if (!player) {
+        player = createAudioPlayer({
+          behaviors: { noSubscriber: NoSubscriberBehavior.Play }
+        });
+        players.set(interaction.guild.id, player);
+        connection.subscribe(player);
+      }
 
-    if (commandName === 'help') {
+      const resource = createAudioResource(stream.stream, { inputType: stream.type });
+      player.play(resource);
+
       const embed = new EmbedBuilder()
-        .setTitle('📋 Help Menu')
-        .setColor('#0099ff')
-        .setDescription('Amarrada bot-ka:')
-        .addFields(
-          { name: '/play <song>', value: 'Ku daar hees Voice Call-ka.' },
-          { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
-          { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
-          { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
-          { name: '/invite', value: 'Soo saar linkiga bot-ka.' }
-        );
+        .setTitle('🎶 Now Playing')
+        .setDescription(`**[${title}](${songUrl})**`)
+        .setColor('#00ff7f');
 
-      return interaction.reply({ embeds: [embed] });
+      return interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error(error);
+      return interaction.editReply('❌ Dhib ayaa ka dhacday shididda heesta! Hubi in heestu jira.');
+    }
+  }
+
+  // --- COMMAND: /connect ---
+  if (commandName === 'connect') {
+    const voiceChannel = interaction.member.voice.channel;
+    if (!voiceChannel) {
+      return interaction.reply({ content: '❌ Horta gal Voice Call!', flags: 64 });
     }
 
-    if (commandName === 'invite') {
-      const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&scope=bot%20applications.commands&permissions=8`;
-      return interaction.reply({ content: `🔗 Linkiga bot-ka: ${inviteUrl}` });
+    joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: interaction.guild.id,
+      adapterCreator: interaction.guild.voiceAdapterCreator,
+    });
+
+    return interaction.reply(`✅ Bot-ku wuxuu ku xirmay: **${voiceChannel.name}**`);
+  }
+
+  // --- COMMAND: /disconnect ---
+  if (commandName === 'disconnect') {
+    const connection = getVoiceConnection(interaction.guild.id);
+    if (!connection) {
+      return interaction.reply({ content: '❌ Bot-ku kuma jiro Voice Call!', flags: 64 });
     }
 
-    if (commandName === 'lyrics') {
-      await interaction.deferReply();
-      const songTitle = interaction.options.getString('song');
+    connection.destroy();
+    players.delete(interaction.guild.id);
+    return interaction.reply('🔌 Bot-kii waa ka baxay Voice Call-ka.');
+  }
 
-      try {
-        const response = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(songTitle)}`);
-        const results = await response.json();
+  // --- COMMAND: /help ---
+  if (commandName === 'help') {
+    const embed = new EmbedBuilder()
+      .setTitle('📋 Help Menu')
+      .setColor('#0099ff')
+      .setDescription('Amarrada bot-ka:')
+      .addFields(
+        { name: '/play <song>', value: 'Ku daar hees Voice Call-ka.' },
+        { name: '/connect', value: 'Bot-ka ku xir Voice Call.' },
+        { name: '/disconnect', value: 'Bot-ka ka saar Voice Call.' },
+        { name: '/lyrics <song>', value: 'Soo saar lyrics-ka heesta.' },
+        { name: '/invite', value: 'Soo saar linkiga bot-ka.' }
+      );
 
-        if (!results || results.length === 0 || !results[0].plainLyrics) {
-          return interaction.editReply(`❌ Wax lyrics ah looma helin heesta: **${songTitle}**`);
-        }
+    return interaction.reply({ embeds: [embed] });
+  }
 
-        const track = results[0];
-        const formattedLyrics = track.plainLyrics
-          .split('\n')
-          .map(line => `-# ${line}`)
-          .join('\n');
+  // --- COMMAND: /invite ---
+  if (commandName === 'invite') {
+    const inviteUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&scope=bot%20applications.commands&permissions=8`;
+    return interaction.reply({ content: `🔗 Linkiga bot-ka: ${inviteUrl}` });
+  }
 
-        const finalLyrics = formattedLyrics.length > 4000 
-          ? formattedLyrics.substring(0, 3900) + '\n-# ... (lyrics-ku waa uu ka dheeraa xadka)'
-          : formattedLyrics;
+  // --- COMMAND: /lyrics ---
+  if (commandName === 'lyrics') {
+    await interaction.deferReply();
+    const songTitle = interaction.options.getString('song');
 
-        const embed = new EmbedBuilder()
-          .setTitle(`🎶 Lyrics: ${track.trackName || songTitle}`)
-          .setAuthor({ name: track.artistName || 'Unknown Artist' })
-          .setColor('#1DB954')
-          .setDescription(finalLyrics);
+    try {
+      const response = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(songTitle)}`);
+      const results = await response.json();
 
-        return interaction.editReply({ embeds: [embed] });
-      } catch (error) {
-        console.error(error);
-        return interaction.editReply('❌ Dhib ayaa ka dhacday raadinta lyrics-ka!');
+      if (!results || results.length === 0 || !results[0].plainLyrics) {
+        return interaction.editReply(`❌ Wax lyrics ah looma helin heesta: **${songTitle}**`);
       }
+
+      const track = results[0];
+      const formattedLyrics = track.plainLyrics
+        .split('\n')
+        .map(line => `-# ${line}`)
+        .join('\n');
+
+      const finalLyrics = formattedLyrics.length > 4000 
+        ? formattedLyrics.substring(0, 3900) + '\n-# ... (lyrics-ku waa uu ka dheeraa xadka)'
+        : formattedLyrics;
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🎶 Lyrics: ${track.trackName || songTitle}`)
+        .setAuthor({ name: track.artistName || 'Unknown Artist' })
+        .setColor('#1DB954')
+        .setDescription(finalLyrics);
+
+      return interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error(error);
+      return interaction.editReply('❌ Dhib ayaa ka dhacday raadinta lyrics-ka!');
     }
   }
 });
 
 client.login(TOKEN);
-
