@@ -123,21 +123,6 @@ async function fetchGlobalLyrics(songTitle) {
         }
       }
     }
-
-    const geniusUrl = `https://api.lyrics.ovh/v1/search?q=${encodeURIComponent(cleanTitle)}`;
-    try {
-      const resGen = await fetch(geniusUrl, { headers });
-      if (resGen.ok) {
-        const dataGen = await resGen.json();
-        if (dataGen && dataGen.lyrics) {
-          const lines = dataGen.lyrics.split('\n').filter(l => l.trim() !== '' && !l.startsWith('['));
-          if (lines.length > 0) {
-            return lines.map((text, idx) => ({ timeMs: idx * 4000, text }));
-          }
-        }
-      }
-    } catch (e) {}
-
     return null;
   } catch (error) {
     return null;
@@ -199,12 +184,8 @@ function createMusicEmbed(musicData, isEnded = false) {
 
     if (activeIdx !== -1) {
       currentLine = song.parsedLyrics[activeIdx].text;
-      if (activeIdx > 0) {
-        prevLine = song.parsedLyrics[activeIdx - 1].text;
-      }
-      if (activeIdx < song.parsedLyrics.length - 1) {
-        nextLine = song.parsedLyrics[activeIdx + 1].text;
-      }
+      if (activeIdx > 0) prevLine = song.parsedLyrics[activeIdx - 1].text;
+      if (activeIdx < song.parsedLyrics.length - 1) nextLine = song.parsedLyrics[activeIdx + 1].text;
     } else if (song.parsedLyrics.length > 0) {
       nextLine = song.parsedLyrics[0].text;
     }
@@ -305,7 +286,7 @@ async function playSong(guildId, song) {
       inlineVolume: true
     });
 
-    resource.volume?.setVolume(musicData.volume);
+    resource.volume.setVolume(musicData.volume);
     musicData.resource = resource;
     musicData.player.play(resource);
 
