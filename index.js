@@ -18,8 +18,9 @@ const client = new Client({
   ]
 });
 
-const TOKEN = process.env.TOKEN ||
-const CLIENT_ID = process.env.CLIENT_ID ||
+// Xogta bot-ka waxaa loo marayaa Environment Variables (Amni ah)
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
 
 const commands = [
   new SlashCommandBuilder()
@@ -51,14 +52,17 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
   try {
-    console.log('Bilaabida diwaangelinta amarrada...');
+    if (!TOKEN || !CLIENT_ID) {
+      console.error('❌ Fadlan deji TOKEN iyo CLIENT_ID gudaha Environment Variables!');
+      return;
+    }
     await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
-    console.log('Amarrada waa lagu guuleystay!');
+    console.log('✅ Amarrada waa lagu guuleystay!');
   } catch (error) {
-    console.error('Dhib ayaa ka dhacday amarrada:', error);
+    console.error('❌ Dhib ayaa ka dhacday amarrada:', error);
   }
 })();
 
@@ -194,4 +198,3 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(TOKEN);
-
