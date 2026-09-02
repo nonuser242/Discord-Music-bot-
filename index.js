@@ -1,3 +1,6 @@
+const fs = require("node:fs");
+const path = require("node:path");
+
 const {
   Client,
   GatewayIntentBits,
@@ -6,92 +9,73 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   ActivityType,
-  PresenceUpdateStatus,
   EmbedBuilder,
-  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  MessageFlags
-} = require('discord.js');
+  ActionRowBuilder,
+  MessageFlags,
+} = require("discord.js");
 
 const {
   joinVoiceChannel,
-  entersState,
+  getVoiceConnection,
   VoiceConnectionStatus,
-  getVoiceConnection
-} = require('@discordjs/voice');
-
-const fs = require('fs');
-const path = require('path');
+  entersState,
+} = require("@discordjs/voice");
 
 
-// =====================================
+// =====================================================
 // CONFIG
-// =====================================
+// =====================================================
 
 const TOKEN = process.env.TOKEN;
 
-const CLIENT_ID = '1543273003822092469';
+const CLIENT_ID = "1543273003822092469";
 
-const SUPPORT_SERVER =
-  'https://discord.gg/JNrsrm8kn';
+const SUPPORT_SERVER = "https://discord.gg/JNrsrm8kn";
 
-const DATA_FILE = path.join(
-  __dirname,
-  'voice_channels.json'
-);
+const CUSTOM_EMOJI = "<a:Scubbacat:1542552078382272532>";
+
+const DATA_FILE = path.join(__dirname, "voice_channels.json");
 
 
-// =====================================
+// =====================================================
 // CHECK TOKEN
-// =====================================
+// =====================================================
 
 if (!TOKEN) {
-  console.error(
-    '❌ TOKEN environment variable is missing!'
-  );
-
+  console.error("ERROR: TOKEN is missing.");
   process.exit(1);
 }
 
 
-// =====================================
+// =====================================================
 // DISCORD CLIENT
-// =====================================
+// =====================================================
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates
-  ]
+    GatewayIntentBits.GuildVoiceStates,
+  ],
 });
 
 
-// =====================================
-// SAVE VOICE CHANNELS
-// =====================================
+// =====================================================
+// SAVE / LOAD VOICE CHANNELS
+// =====================================================
 
 function loadVoiceChannels() {
   try {
-
     if (!fs.existsSync(DATA_FILE)) {
       return {};
     }
 
-    const data = fs.readFileSync(
-      DATA_FILE,
-      'utf8'
-    );
+    const data = fs.readFileSync(DATA_FILE, "utf8");
 
     return JSON.parse(data);
-
   } catch (error) {
-
-    console.error(
-      '❌ Could not load voice channels:',
-      error
-    );
-
+    console.error("Could not load voice channels:", error);
     return {};
   }
 }
@@ -99,194 +83,217 @@ function loadVoiceChannels() {
 
 function saveVoiceChannels(data) {
   try {
-
     fs.writeFileSync(
       DATA_FILE,
-      JSON.stringify(
-        data,
-        null,
-        2
-      )
+      JSON.stringify(data, null, 2),
+      "utf8"
     );
-
   } catch (error) {
-
-    console.error(
-      '❌ Could not save voice channels:',
-      error
-    );
+    console.error("Could not save voice channels:", error);
   }
 }
 
 
-let savedVoiceChannels =
-  loadVoiceChannels();
+let savedChannels = loadVoiceChannels();
 
 
-// =====================================
-// COMMANDS
-// =====================================
+// =====================================================
+// SLASH COMMANDS
+// =====================================================
 
 const commands = [
 
   new SlashCommandBuilder()
-    .setName('connect')
-    .setDescription(
-      'Connect the bot to your Voice Channel.'
-    )
-    .setDefaultMemberPermissions(
-      PermissionFlagsBits.Administrator
-    ),
+    .setName("connect")
+    .setDescription("Connect the bot to your voice channel"),
 
   new SlashCommandBuilder()
-    .setName('disconnect')
-    .setDescription(
-      'Disconnect the bot from the Voice Channel.'
-    )
-    .setDefaultMemberPermissions(
-      PermissionFlagsBits.Administrator
-    ),
+    .setName("disconnect")
+    .setDescription("Disconnect the bot from the voice channel"),
 
   new SlashCommandBuilder()
-    .setName('invite')
-    .setDescription(
-      'Get the bot invite link.'
-    ),
+    .setName("invite")
+    .setDescription("Get the bot invite link"),
 
   new SlashCommandBuilder()
-    .setName('help')
-    .setDescription(
-      'Learn how to use the bot.'
+    .setName("help")
+    .setDescription("Learn how to use the bot"),
 
-    )
-
-].map(command =>
-  command.toJSON()
-);
+].map(command => command.toJSON());
 
 
-// =====================================
-// HELPER FUNCTIONS
-// =====================================
+// =====================================================
+// REGISTER COMMANDS
+// =====================================================
 
-function isAdmin(interaction) {
-
-  if (!interaction.inGuild()) {
-    return false;
-  }
-
-  return interaction.memberPermissions?.has(
-    PermissionFlagsBits.Administrator
-  );
-
-}
-
-
-async function adminOnly(interaction) {
-
-  if (isAdmin(interaction)) {
-    return true;
-  }
-
-  await interaction.reply({
-    content:
-      '❌ Only server administrators can use this command.',
-    flags: MessageFlags.Ephemeral
-  });
-
-  return false;
-}
-
-
-async function safeReply(
-  interaction,
-  options
-) {
+async function registerCommands() {
+  const rest = new REST({
+    version: "10",
+  }).setToken(TOKEN);
 
   try {
+    console.log("| Loading slash commands...");
 
-    if (
-      interaction.replied ||
-      interaction.deferred
-    ) {
-
-      return await interaction.followUp(
-        options
-      );
-
-    }
-
-    return await interaction.reply(
-      options
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      {
+        body: commands,
+      }
     );
+
+    console.log("| Slash Commands Loaded!");
 
   } catch (error) {
-
-    console.error(
-      'Reply error:',
-      error
-    );
+    console.error("Slash command error:", error);
   }
 }
 
 
-// =====================================
-// CONNECT BOT
-// =====================================
+// =====================================================
+// BOT STATUS
+// =====================================================
 
-async function connectToVoiceChannel(
-  guild,
-  channelId
-) {
+// Foreign / international songs only
+const songs = [
+  "Cris MJ",
+  "The Weeknd",
+  "Drake",
+  "DJ Khaled",
+  "Bad Bunny",
+  "Travis Scott",
+  "Billie Eilish",
+  "Post Malone",
+];
 
-  try {
+let songIndex = 0;
 
-    const channel =
-      await client.channels.fetch(
-        channelId
-      );
 
-    if (!channel) {
-      throw new Error(
-        'Voice channel not found.'
-      );
+function updateStatus() {
+
+  const song = songs[songIndex];
+
+  client.user.setPresence({
+    status: "dnd",
+
+    activities: [
+      {
+        name: `${CUSTOM_EMOJI} ${song}`,
+        type: ActivityType.Listening,
+      },
+    ],
+  });
+
+  console.log(`Listening status: ${song}`);
+
+  songIndex = (songIndex + 1) % songs.length;
+}
+
+
+// =====================================================
+// CONNECT TO VOICE CHANNEL
+// =====================================================
+
+async function connectToChannel(channel) {
+
+  if (!channel) {
+    throw new Error("Voice channel not found.");
+  }
+
+  if (!channel.joinable) {
+    throw new Error(
+      "I do not have permission to join this voice channel."
+    );
+  }
+
+  const oldConnection = getVoiceConnection(
+    channel.guild.id
+  );
+
+  if (oldConnection) {
+    try {
+      oldConnection.destroy();
+    } catch (error) {
+      console.error("Old connection error:", error);
     }
+  }
 
-    const existing =
-      getVoiceConnection(
-        guild.id
+  const connection = joinVoiceChannel({
+
+    channelId: channel.id,
+
+    guildId: channel.guild.id,
+
+    adapterCreator:
+      channel.guild.voiceAdapterCreator,
+
+    selfDeaf: true,
+
+    selfMute: false,
+
+  });
+
+  connection.on(
+    VoiceConnectionStatus.Disconnected,
+    async () => {
+
+      console.log(
+        `Disconnected from ${channel.guild.name}. Trying to reconnect...`
       );
 
-    if (existing) {
+      try {
 
-      if (
-        existing.joinConfig.channelId ===
-        channelId
-      ) {
+        await Promise.race([
+          entersState(
+            connection,
+            VoiceConnectionStatus.Signalling,
+            5000
+          ),
 
-        return existing;
+          entersState(
+            connection,
+            VoiceConnectionStatus.Connecting,
+            5000
+          ),
+        ]);
+
+      } catch (error) {
+
+        try {
+
+          console.log(
+            `Reconnecting to ${channel.guild.name}...`
+          );
+
+          connection.rejoin();
+
+        } catch (rejoinError) {
+
+          console.error(
+            "Reconnection failed:",
+            rejoinError
+          );
+
+        }
+
       }
 
-      existing.destroy();
     }
+  );
 
 
-    const connection =
-      joinVoiceChannel({
+  connection.on(
+    VoiceConnectionStatus.Destroyed,
+    () => {
 
-        channelId: channel.id,
+      console.log(
+        `Voice connection destroyed in ${channel.guild.name}`
+      );
 
-        guildId: guild.id,
+    }
+  );
 
-        adapterCreator:
-          guild.voiceAdapterCreator,
 
-        selfDeaf: true,
-
-        selfMute: false
-
-      });
-
+  try {
 
     await entersState(
       connection,
@@ -294,324 +301,273 @@ async function connectToVoiceChannel(
       30000
     );
 
-
     console.log(
-      `✅ Connected to ${channel.name} in ${guild.name}`
+      `Connected to voice channel: ${channel.name}`
     );
-
 
     return connection;
 
   } catch (error) {
 
-    console.error(
-      `❌ Voice connection error in ${guild.id}:`,
-      error
-    );
+    connection.destroy();
 
     throw error;
   }
+
 }
 
 
-// =====================================
-// AUTO RECONNECT
-// =====================================
+// =====================================================
+// AUTO RECONNECT AFTER BOT RESTART
+// =====================================================
 
-async function reconnectGuild(
-  guildId,
-  channelId
-) {
+async function restoreVoiceChannels() {
 
-  try {
+  console.log(
+    `Restoring ${Object.keys(savedChannels).length} voice channel(s)...`
+  );
 
-    const guild =
-      client.guilds.cache.get(
-        guildId
-      );
+  for (const guildId of Object.keys(savedChannels)) {
 
-    if (!guild) {
-      return;
-    }
-
-    await connectToVoiceChannel(
-      guild,
-      channelId
-    );
-
-    console.log(
-      `🔄 Reconnected to saved Voice Channel in ${guild.name}`
-    );
-
-  } catch (error) {
-
-    console.error(
-      '❌ Auto reconnect failed:',
-      error.message
-    );
-  }
-}
-
-
-// =====================================
-// READY
-// =====================================
-
-client.once(
-  'clientReady',
-  async () => {
-
-    console.log(
-      `✅ Bot Online: ${client.user.tag}`
-    );
-
-
-    // ===============================
-    // BOT STATUS
-    // ===============================
-
-    client.user.setPresence({
-
-      status: PresenceUpdateStatus.DoNotDisturb,
-
-      activities: [
-
-        {
-
-          name:
-            '<a:Scubbacat:1542552078382272532>',
-
-          type:
-            ActivityType.Custom
-
-        }
-
-      ]
-
-    });
-
-
-    // ===============================
-    // LOAD SLASH COMMANDS
-    // ===============================
+    const channelId = savedChannels[guildId];
 
     try {
 
-      console.log(
-        '⏳ Loading slash commands...'
-      );
+      const channel =
+        await client.channels.fetch(channelId);
 
+      if (!channel) {
+        continue;
+      }
 
-      const rest =
-        new REST({
-          version: '10'
-        })
-        .setToken(TOKEN);
+      if (!channel.isVoiceBased()) {
+        continue;
+      }
 
-
-      await rest.put(
-        Routes.applicationCommands(
-          CLIENT_ID
-        ),
-        {
-          body: commands
-        }
-      );
-
+      await connectToChannel(channel);
 
       console.log(
-        '✅ Slash Commands Loaded!'
+        `Restored connection: ${channel.guild.name} -> ${channel.name}`
       );
 
     } catch (error) {
 
       console.error(
-        '❌ Command loading error:',
-        error
+        `Could not restore voice channel ${channelId}:`,
+        error.message
       );
-    }
-
-
-    // ===============================
-    // AUTO RETURN AFTER RESTART
-    // ===============================
-
-    console.log(
-      '🔄 Checking saved Voice Channels...'
-    );
-
-
-    for (
-      const [guildId, channelId]
-      of Object.entries(
-        savedVoiceChannels
-      )
-    ) {
-
-      try {
-
-        await reconnectGuild(
-          guildId,
-          channelId
-        );
-
-      } catch (error) {
-
-        console.error(
-          `❌ Could not reconnect ${guildId}`
-        );
-      }
 
     }
 
   }
-);
+
+}
 
 
-// =====================================
-// INTERACTIONS
-// =====================================
+// =====================================================
+// READY
+// =====================================================
+
+client.once("clientReady", async () => {
+
+  console.log(
+    `Bot Online: ${client.user.tag}`
+  );
+
+  // Register slash commands
+  await registerCommands();
+
+  // Set status immediately
+  updateStatus();
+
+  // Change Listening status every 5 minutes
+  setInterval(() => {
+
+    updateStatus();
+
+  }, 5 * 60 * 1000);
+
+
+  // Restore voice channels
+  await restoreVoiceChannels();
+
+});
+
+
+// =====================================================
+// SAFE REPLY
+// =====================================================
+
+async function replyPrivate(interaction, content) {
+
+  const options = {
+    content,
+    flags: MessageFlags.Ephemeral,
+  };
+
+  if (interaction.replied || interaction.deferred) {
+
+    return interaction.followUp(options);
+
+  }
+
+  return interaction.reply(options);
+
+}
+
+
+// =====================================================
+// INTERACTION HANDLER
+// =====================================================
 
 client.on(
-  'interactionCreate',
+  "interactionCreate",
   async interaction => {
 
-    try {
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
 
 
-      // =============================
-      // ONLY SLASH COMMANDS
-      // =============================
+    // =================================================
+    // CONNECT
+    // =================================================
 
-      if (
-        !interaction.isChatInputCommand()
-      ) {
-        return;
+    if (interaction.commandName === "connect") {
+
+      // Must be used inside a server
+      if (!interaction.guild) {
+
+        return interaction.reply({
+          content:
+            "❌ This command can only be used inside a Discord server.",
+        });
+
       }
 
 
-      const command =
-        interaction.commandName;
-
-
-      // =============================
-      // CONNECT
-      // =============================
-
+      // Admin only
       if (
-        command === 'connect'
+        !interaction.memberPermissions?.has(
+          PermissionFlagsBits.Administrator
+        )
       ) {
 
-        if (
-          !interaction.inGuild()
-        ) {
+        return replyPrivate(
+          interaction,
+          "❌ Only server administrators can use this command."
+        );
 
-          return safeReply(
-            interaction,
-            {
-              content:
-                '❌ This command can only be used inside a Discord server.'
-            }
-          );
-        }
+      }
 
 
-        const allowed =
-          await adminOnly(
-            interaction
-          );
-
-        if (!allowed) {
-          return;
-        }
+      const voiceChannel =
+        interaction.member?.voice?.channel;
 
 
-        const voiceChannel =
-          interaction.member
-            ?.voice
-            ?.channel;
+      if (!voiceChannel) {
+
+        return replyPrivate(
+          interaction,
+          "❌ Join a voice channel first, then use `/connect`."
+        );
+
+      }
 
 
-        if (!voiceChannel) {
-
-          return safeReply(
-            interaction,
-            {
-              content:
-                '❌ You must join a Voice Channel first.',
-
-              flags:
-                MessageFlags.Ephemeral
-            }
-          );
-        }
-
+      try {
 
         await interaction.deferReply({
-          flags:
-            MessageFlags.Ephemeral
+          flags: MessageFlags.Ephemeral,
         });
 
 
-        await connectToVoiceChannel(
-          interaction.guild,
-          voiceChannel.id
+        await connectToChannel(
+          voiceChannel
         );
 
 
-        // SAVE CHANNEL
-        savedVoiceChannels[
+        // Save separately for every server
+        savedChannels[
           interaction.guild.id
         ] = voiceChannel.id;
 
 
         saveVoiceChannels(
-          savedVoiceChannels
+          savedChannels
         );
 
 
-        await interaction.editReply({
+        await interaction.editReply(
+          `✅ Connected to **${voiceChannel.name}**.\n\n` +
+          `🏁 The bot will automatically return to this voice channel after a restart.`
+        );
+
+
+      } catch (error) {
+
+        console.error(
+          "Connect error:",
+          error
+        );
+
+
+        if (
+          interaction.deferred ||
+          interaction.replied
+        ) {
+
+          await interaction.editReply(
+            `❌ Could not connect to the voice channel.\n\`${error.message}\``
+          );
+
+        } else {
+
+          await replyPrivate(
+            interaction,
+            "❌ Could not connect to the voice channel."
+          );
+
+        }
+
+      }
+
+      return;
+    }
+
+
+    // =================================================
+    // DISCONNECT
+    // =================================================
+
+    if (interaction.commandName === "disconnect") {
+
+      if (!interaction.guild) {
+
+        return interaction.reply({
           content:
-            `✅ Connected to **${voiceChannel.name}**.\n\n` +
-            '🔒 The bot will stay connected until an administrator uses `/disconnect`.'
+            "❌ This command can only be used inside a Discord server.",
         });
 
-
-        return;
       }
 
 
-      // =============================
-      // DISCONNECT
-      // =============================
-
+      // Admin only
       if (
-        command === 'disconnect'
+        !interaction.memberPermissions?.has(
+          PermissionFlagsBits.Administrator
+        )
       ) {
 
-        if (
-          !interaction.inGuild()
-        ) {
+        return replyPrivate(
+          interaction,
+          "❌ Only server administrators can use this command."
+        );
 
-          return safeReply(
-            interaction,
-            {
-              content:
-                '❌ This command can only be used inside a Discord server.'
-            }
-          );
-        }
+      }
 
 
-        const allowed =
-          await adminOnly(
-            interaction
-          );
-
-        if (!allowed) {
-          return;
-        }
-
+      try {
 
         const connection =
           getVoiceConnection(
@@ -619,230 +575,174 @@ client.on(
           );
 
 
-        // DELETE SAVED CHANNEL FIRST
-        delete savedVoiceChannels[
+        if (connection) {
+
+          connection.destroy();
+
+        }
+
+
+        // Remove saved voice channel
+        delete savedChannels[
           interaction.guild.id
         ];
 
 
         saveVoiceChannels(
-          savedVoiceChannels
+          savedChannels
         );
 
 
-        if (connection) {
-
-          connection.destroy();
-
-          return safeReply(
-            interaction,
-            {
-              content:
-                '👋 Bot disconnected from the Voice Channel.',
-
-              flags:
-                MessageFlags.Ephemeral
-            }
-          );
-        }
-
-
-        return safeReply(
+        return replyPrivate(
           interaction,
-          {
-            content:
-              '❌ The bot is not connected to a Voice Channel.',
-
-            flags:
-              MessageFlags.Ephemeral
-          }
+          "👋 Disconnected from the voice channel."
         );
-      }
 
 
-      // =============================
-      // INVITE
-      // =============================
-
-      if (
-        command === 'invite'
-      ) {
-
-        const inviteURL =
-          `https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot%20applications.commands`;
-
-
-        const row =
-          new ActionRowBuilder()
-            .addComponents(
-
-              new ButtonBuilder()
-
-                .setLabel(
-                  'Invite Bot'
-                )
-
-                .setStyle(
-                  ButtonStyle.Link
-                )
-
-                .setURL(
-                  inviteURL
-                )
-
-                .setEmoji(
-                  '➕'
-                )
-
-            );
-
-
-        return safeReply(
-          interaction,
-          {
-            content:
-              '🤖 **Invite the bot to your Discord server:**',
-
-            components:
-              [row],
-
-            ...(interaction.inGuild()
-              ? {
-                  flags:
-                    MessageFlags.Ephemeral
-                }
-              : {})
-          }
-        );
-      }
-
-
-      // =============================
-      // HELP
-      // =============================
-
-      if (
-        command === 'help'
-      ) {
-
-        const embed =
-          new EmbedBuilder()
-
-            .setTitle(
-              '🤖 Bot Help'
-            )
-
-            .setDescription(
-              'This bot is a Voice Channel connection bot.\n\n' +
-
-              '**/connect**\n' +
-              'Connect the bot to your current Voice Channel.\n' +
-              '🔒 Administrator only.\n\n' +
-
-              '**/disconnect**\n' +
-              'Disconnect the bot from the Voice Channel.\n' +
-              '🔒 Administrator only.\n\n' +
-
-              '**/invite**\n' +
-              'Get the bot invite link.\n\n' +
-
-              '**/help**\n' +
-              'Show this help menu.\n\n' +
-
-              '🔄 The bot remembers the last Voice Channel and attempts to reconnect after a restart.'
-            )
-
-            .setColor(
-              '#5865F2'
-            );
-
-
-        const row =
-          new ActionRowBuilder()
-            .addComponents(
-
-              new ButtonBuilder()
-
-                .setLabel(
-                  'Support Server'
-                )
-
-                .setStyle(
-                  ButtonStyle.Link
-                )
-
-                .setURL(
-                  SUPPORT_SERVER
-                )
-
-                .setEmoji(
-                  '💬'
-                )
-
-            );
-
-
-        return safeReply(
-          interaction,
-          {
-            embeds:
-              [embed],
-
-            components:
-              [row],
-
-            ...(interaction.inGuild()
-              ? {
-                  flags:
-                    MessageFlags.Ephemeral
-                }
-              : {})
-          }
-        );
-      }
-
-
-    } catch (error) {
-
-      console.error(
-        '❌ Interaction Error:',
-        error
-      );
-
-
-      try {
-
-        if (
-          interaction.deferred
-        ) {
-
-          await interaction.editReply({
-            content:
-              '❌ An error occurred.'
-          });
-
-        } else if (
-          !interaction.replied
-        ) {
-
-          await interaction.reply({
-            content:
-              '❌ An error occurred.',
-
-            flags:
-              interaction.inGuild()
-                ? MessageFlags.Ephemeral
-                : undefined
-          });
-        }
-
-      } catch (replyError) {
+      } catch (error) {
 
         console.error(
-          '❌ Reply Error:',
-          replyError
+          "Disconnect error:",
+          error
         );
+
+
+        return replyPrivate(
+          interaction,
+          "❌ Something went wrong while disconnecting."
+        );
+
       }
+
+    }
+
+
+    // =================================================
+    // INVITE
+    // =================================================
+
+    if (interaction.commandName === "invite") {
+
+      const inviteURL =
+        `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&integration_type=0&scope=bot+applications.commands`;
+
+
+      const button =
+        new ButtonBuilder()
+          .setLabel("Invite Bot")
+          .setStyle(ButtonStyle.Link)
+          .setURL(inviteURL);
+
+
+      const row =
+        new ActionRowBuilder()
+          .addComponents(button);
+
+
+      const embed =
+        new EmbedBuilder()
+
+          .setTitle("🤖 Invite the Bot")
+
+          .setDescription(
+            "Click the button below to invite the bot to your Discord server."
+          )
+
+          .addFields({
+            name: "Support Server",
+            value: SUPPORT_SERVER,
+          });
+
+
+      return interaction.reply({
+
+        embeds: [embed],
+
+        components: [row],
+
+        flags: interaction.guild
+          ? MessageFlags.Ephemeral
+          : undefined,
+
+      });
+
+    }
+
+
+    // =================================================
+    // HELP
+    // =================================================
+
+    if (interaction.commandName === "help") {
+
+      const supportButton =
+        new ButtonBuilder()
+          .setLabel("Server Support")
+          .setStyle(ButtonStyle.Link)
+          .setURL(SUPPORT_SERVER);
+
+
+      const row =
+        new ActionRowBuilder()
+          .addComponents(
+            supportButton
+          );
+
+
+      const embed =
+        new EmbedBuilder()
+
+          .setTitle("🤖 Bot Commands")
+
+          .setDescription(
+            "Here is how to use the bot:"
+          )
+
+          .addFields(
+
+            {
+              name: "/connect",
+              value:
+                "Connect the bot to your current voice channel. Only server administrators can use this command.",
+            },
+
+            {
+              name: "/disconnect",
+              value:
+                "Disconnect the bot from the voice channel. Only server administrators can use this command.",
+            },
+
+            {
+              name: "/invite",
+              value:
+                "Get the bot invite link.",
+            },
+
+            {
+              name: "/help",
+              value:
+                "Show this help message.",
+            }
+
+          )
+
+          .setFooter({
+            text:
+              "The bot automatically remembers its voice channel after a restart.",
+          });
+
+
+      return interaction.reply({
+
+        embeds: [embed],
+
+        components: [row],
+
+        flags: interaction.guild
+          ? MessageFlags.Ephemeral
+          : undefined,
+
+      });
 
     }
 
@@ -850,8 +750,51 @@ client.on(
 );
 
 
-// =====================================
+// =====================================================
+// ERROR HANDLERS
+// =====================================================
+
+client.on(
+  "error",
+  error => {
+
+    console.error(
+      "Discord client error:",
+      error
+    );
+
+  }
+);
+
+
+process.on(
+  "unhandledRejection",
+  error => {
+
+    console.error(
+      "Unhandled Promise Rejection:",
+      error
+    );
+
+  }
+);
+
+
+process.on(
+  "uncaughtException",
+  error => {
+
+    console.error(
+      "Uncaught Exception:",
+      error
+    );
+
+  }
+);
+
+
+// =====================================================
 // LOGIN
-// =====================================
+// =====================================================
 
 client.login(TOKEN);
