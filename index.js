@@ -84,7 +84,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("invite")
-    .setDescription("Soo saar link-ka bot-ka lagu soo darto"),
+    .setDescription("Soo saار link-ka bot-ka lagu soo darto"),
 
   new SlashCommandBuilder()
     .setName("help")
@@ -192,7 +192,7 @@ function updateStatusDisplay() {
           end: songStartTime + (currentSong.duration * 1000)
         },
         assets: {
-          largeImage: "music", // Halkan waxaa la geliyay asset key-gii aad Developer Portal ku soo gelisay ("music")
+          largeImage: "music", // Asset key-gii aad Developer Portal ku soo gelisay
           largeText: "Grilll Music"
         }
       }
