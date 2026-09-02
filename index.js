@@ -70,7 +70,7 @@ function saveVoiceChannels(data) {
 let savedChannels = loadVoiceChannels();
 
 // =====================================================
-// SLASH COMMANDS (Si ay Profile Card-ka ugu soo baxaan)
+// SLASH COMMANDS
 // =====================================================
 
 const commands = [
@@ -108,23 +108,27 @@ async function registerCommands() {
 }
 
 // =====================================================
-// DYNAMIC SONG GENERATOR & LYRICS LOOP
+// DYNAMIC 300+ SONGS & LYRICS SYSTEM
 // =====================================================
 
 const artists = [
   "Nicky Jam", "Cris MJ", "The Weeknd", "Drake", "Bad Bunny", 
-  "Travis Scott", "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa"
+  "Travis Scott", "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa",
+  "Rauw Alejandro", "Feid", "Ozuna", "J Balvin", "Daddy Yankee", "Karol G"
 ];
 
 const songTitles = [
   "Hasta el Amanecer", "Starboy", "God's Plan", "Part Time", "Monaco", 
-  "FE!N", "HUMBLE.", "Circles", "Peaches", "Blinding Lights"
+  "FE!N", "HUMBLE.", "Circles", "Peaches", "Blinding Lights", "One Dance",
+  "Rockstar", "Un Preview", "Lala", "Classy 101", "Despacito", "Mi Gente"
 ];
 
 const lyricsDatabase = [
   ["🎵 'Como tu te llamas yo no se...'", "🎵 'Y de donde vienes tampoco se...'", "🎵 'Lo unico que se es que te quiero a ti...'"],
   ["🎵 'Y si algún día te vuelvo a ver...'", "🎵 'No te olvides de mí...'", "🎵 'Baby, tú ere' mi parte time...'"],
-  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"]
+  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"],
+  ["🎵 'Yeah, I'm gonna take my horse...'", "🎵 'To the old town road...'", "🎵 'I'm gonna ride 'til I can't no more...'"],
+  ["🎵 'Looking for a time, yeah...'", "🎵 'I know you want this for life...'", "🎵 'Let's keep it going all night...'"]
 ];
 
 function getRandomSong() {
@@ -135,7 +139,7 @@ function getRandomSong() {
   return {
     artist: randomArtist,
     title: randomTitle,
-    duration: 180 + Math.floor(Math.random() * 120),
+    duration: 180 + Math.floor(Math.random() * 120), // 3 ilaa 5 daqiiqo
     lyricsLines: randomLyrics
   };
 }
@@ -143,44 +147,52 @@ function getRandomSong() {
 let currentSong = getRandomSong();
 let lineIndex = 0;
 let songStartTime = Date.now();
+let lyricsInterval = null;
 
 function startSongPlayer() {
+  if (lyricsInterval) clearInterval(lyricsInterval);
+
   currentSong = getRandomSong();
   songStartTime = Date.now();
   lineIndex = 0;
 
   updateStatusDisplay();
 
-  const lyricsInterval = setInterval(() => {
+  // Lyrics-ka hoose ku soo baxaya oo is beddelaya 10-kiiba ilbiriqsi
+  lyricsInterval = setInterval(() => {
     lineIndex++;
     if (lineIndex < currentSong.lyricsLines.length) {
       updateStatusDisplay();
     } else {
-      clearInterval(lyricsInterval);
+      lineIndex = 0; // Dib uga bilow lyrics-ka haddii heestu wali socoto
+      updateStatusDisplay();
     }
   }, 10000);
 
+  // Marka heestu dhammato, dib u bilaabid hees cusub
   setTimeout(() => {
-    clearInterval(lyricsInterval);
+    if (lyricsInterval) clearInterval(lyricsInterval);
     startSongPlayer();
   }, currentSong.duration * 1000);
 }
 
 function updateStatusDisplay() {
+  const currentLyric = currentSong.lyricsLines[lineIndex] || currentSong.artist;
+
   client.user.setPresence({
     status: "dnd",
     activities: [
       {
         name: currentSong.title,
         type: ActivityType.Listening,
-        details: currentSong.title,
-        state: currentSong.artist,
+        details: `${currentSong.title} - ${currentSong.artist}`, // Magaca heesta & fanaanka
+        state: currentLyric,                                     // Lyrics-ka hoose ku soo baxaya!
         timestamps: {
           start: songStartTime,
           end: songStartTime + (currentSong.duration * 1000)
         },
         assets: {
-          largeImage: "42749", // Key-ga sawirka aad ka soo upload-gareysay Developer Portal
+          largeImage: "42749",
           largeText: "Fenix"
         }
       }
