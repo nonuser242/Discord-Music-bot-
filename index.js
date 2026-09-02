@@ -70,7 +70,7 @@ function saveVoiceChannels(data) {
 let savedChannels = loadVoiceChannels();
 
 // =====================================================
-// SLASH COMMANDS (Waxay si toos ah ugu muuqanayaan Profile-ka)
+// SLASH COMMANDS (Si ay Profile Card-ka ugu soo baxaan)
 // =====================================================
 
 const commands = [
@@ -89,13 +89,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName("help")
     .setDescription("Hel caawimaad ku saabsan isticmaalka bot-ka"),
-].map(command => command.toJSON());
+].map(command => {
+  const obj = command.toJSON();
+  obj.integration_types = [0, 1];
+  obj.contexts = [0, 1, 2];
+  return obj;
+});
 
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     console.log("Loading global slash commands to profile...");
-    // Global Commands waxay Profile Card-ka ku soo saaraan amarrada
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
     console.log("Commands profile-ka si sax ah ayaa loogu diwaan-geliyay!");
   } catch (error) {
@@ -108,20 +112,19 @@ async function registerCommands() {
 // =====================================================
 
 const artists = [
-  "Cris MJ", "The Weeknd", "Drake", "Bad Bunny", "Travis Scott", 
-  "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa", "Rihanna",
-  "SZA", "Taylor Swift", "Bruno Mars", "Kanye West", "XXXTENTACION"
+  "Nicky Jam", "Cris MJ", "The Weeknd", "Drake", "Bad Bunny", 
+  "Travis Scott", "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa"
 ];
 
 const songTitles = [
-  "Starboy", "God's Plan", "Part Time", "Monaco", "FE!N", "HUMBLE.",
-  "Circles", "Peaches", "Levitating", "Diamonds", "Kill Bill", "Blinding Lights"
+  "Hasta el Amanecer", "Starboy", "God's Plan", "Part Time", "Monaco", 
+  "FE!N", "HUMBLE.", "Circles", "Peaches", "Blinding Lights"
 ];
 
 const lyricsDatabase = [
+  ["🎵 'Como tu te llamas yo no se...'", "🎵 'Y de donde vienes tampoco se...'", "🎵 'Lo unico que se es que te quiero a ti...'"],
   ["🎵 'Y si algún día te vuelvo a ver...'", "🎵 'No te olvides de mí...'", "🎵 'Baby, tú ere' mi parte time...'"],
-  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"],
-  ["🎵 'I hold back, sometimes I won't...'", "🎵 'She said, Do you love me? I tell her, Only partly...'", "🎵 'God's plan, God's plan...'"]
+  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can'sleep until I feel your touch...'", "🎵 'I'm running out of time...'"]
 ];
 
 function getRandomSong() {
@@ -130,7 +133,8 @@ function getRandomSong() {
   const randomLyrics = lyricsDatabase[Math.floor(Math.random() * lyricsDatabase.length)];
   
   return {
-    title: `${randomArtist} - ${randomTitle}`,
+    artist: randomArtist,
+    title: randomTitle,
     duration: 180 + Math.floor(Math.random() * 120),
     lyricsLines: randomLyrics
   };
@@ -167,17 +171,17 @@ function updateStatusDisplay() {
     status: "dnd",
     activities: [
       {
-        name: "Custom Status",
-        type: ActivityType.Custom,
-        state: "Vibing Music ♪",
-      },
-      {
         name: currentSong.title,
         type: ActivityType.Listening,
-        state: currentSong.lyricsLines[lineIndex] || currentSong.lyricsLines[0],
+        details: currentSong.title,
+        state: currentSong.artist,
         timestamps: {
           start: songStartTime,
           end: songStartTime + (currentSong.duration * 1000)
+        },
+        assets: {
+          largeImage: "42749", // Key name-ki ka muuqday Developer Portal
+          largeText: "Fenix"
         }
       }
     ]
@@ -338,4 +342,3 @@ client.on("interactionCreate", async interaction => {
 // =====================================================
 
 client.login(TOKEN);
-
