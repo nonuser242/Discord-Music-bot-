@@ -1,807 +1,132 @@
-const fs = require("node:fs");
-const path = require("node:path");
+require('dotenv').config(); // Waxay ka soo akhrinaysaa Token-ka file-ka .env
 
-const {
-  Client,
-  GatewayIntentBits,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  ActivityType,
-  EmbedBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
-  MessageFlags,
-} = require("discord.js");
-
-const {
-  joinVoiceChannel,
-  getVoiceConnection,
-  VoiceConnectionStatus,
-  entersState,
-} = require("@discordjs/voice");
-
-
-// =====================================================
-// CONFIG
-// =====================================================
-
-const TOKEN = process.env.TOKEN;
-
-const CLIENT_ID = "1543273003822092469";
-
-const SUPPORT_SERVER = "https://discord.gg/JNrsrm8kn";
-
-// Discord Status Emojis (Custom emojis don't render in Activity Names)
-const CUSTOM_EMOJI_NAME = "Scubbacat";
-const CUSTOM_EMOJI_ID = "1542552078382272532";
-
-const DATA_FILE = path.join(__dirname, "voice_channels.json");
-
-
-// =====================================================
-// CHECK TOKEN
-// =====================================================
-
-if (!TOKEN) {
-  console.error("ERROR: TOKEN is missing.");
-  process.exit(1);
-}
-
-
-// =====================================================
-// DISCORD CLIENT
-// =====================================================
+const { 
+  Client, 
+  GatewayIntentBits, 
+  ActivityType, 
+  REST, 
+  Routes, 
+  SlashCommandBuilder, 
+  EmbedBuilder 
+} = require('discord.js');
+const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-  ],
+    GatewayIntentBits.GuildVoiceStates
+  ]
 });
 
-
-// =====================================================
-// SAVE / LOAD VOICE CHANNELS
-// =====================================================
-
-function loadVoiceChannels() {
-  try {
-    if (!fs.existsSync(DATA_FILE)) {
-      return {};
-    }
-
-    const data = fs.readFileSync(DATA_FILE, "utf8");
-
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Could not load voice channels:", error);
-    return {};
-  }
-}
-
-
-function saveVoiceChannels(data) {
-  try {
-    fs.writeFileSync(
-      DATA_FILE,
-      JSON.stringify(data, null, 2),
-      "utf8"
-    );
-  } catch (error) {
-    console.error("Could not save voice channels:", error);
-  }
-}
-
-
-let savedChannels = loadVoiceChannels();
-
-
-// =====================================================
-// SLASH COMMANDS
-// =====================================================
-
+// 1. Abuuridda Slash Commands-ka
 const commands = [
+  new SlashCommandBuilder()
+    .setName('connect')
+    .setDescription('Bot-ku wuxuu galayaa call-ka aad ku jirto si uu ugu sii jiro'),
 
   new SlashCommandBuilder()
-    .setName("connect")
-    .setDescription("Connect the bot to your voice channel"),
+    .setName('disconnect')
+    .setDescription('Bot-ku wuxuu ka baxayaa call-ka'),
 
   new SlashCommandBuilder()
-    .setName("disconnect")
-    .setDescription("Disconnect the bot from the voice channel"),
+    .setName('invite')
+    .setDescription('Ka hel link-ka bot-ka looga soo daro server-ka'),
 
   new SlashCommandBuilder()
-    .setName("invite")
-    .setDescription("Get the bot invite link"),
-
-  new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("Learn how to use the bot"),
-
+    .setName('help')
+    .setDescription('Hel caawinaad iyo liiska amarrada bot-ka')
 ].map(command => command.toJSON());
 
+// 2. Marka Bot-ku Online Soo Gallay
+client.on('ready', async () => {
+  console.log(`Bot-kii waa online: ${client.user.tag}`);
 
-// =====================================================
-// REGISTER COMMANDS
-// =====================================================
-
-async function registerCommands() {
-  const rest = new REST({
-    version: "10",
-  }).setToken(TOKEN);
-
+  // Diwaan-gelinta Slash Commands iyadoo loo isticmaalayo process.env.BOT_TOKEN
+  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
-    console.log("| Loading slash commands...");
-
     await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
-      {
-        body: commands,
-      }
+      Routes.applicationCommands(client.user.id),
+      { body: commands }
     );
-
-    console.log("| Slash Commands Loaded!");
-
+    console.log('Slash Commands-kii waa la diwaan-geliyay!');
   } catch (error) {
-    console.error("Slash command error:", error);
+    console.error('Cillad diwaan-gelinta amarrada:', error);
   }
-}
 
+  // Active Listening Status (wata Timer iyo Lyrics)
+  const startTime = Date.now();
+  const songDurationSeconds = 210;
 
-// =====================================================
-// BOT STATUS WITH SONGS & DURATION
-// =====================================================
-
-// Heesaha, Fanaaniinta, iyo Daqiiqadaha heesta
-const playlist = [
-  { song: "Gata Only", artist: "Cris MJ", duration: "3:42" },
-  { song: "Blinding Lights", artist: "The Weeknd", duration: "3:20" },
-  { song: "God's Plan", artist: "Drake", duration: "3:18" },
-  { song: "Wild Thoughts", artist: "DJ Khaled", duration: "3:24" },
-  { song: "Monaco", artist: "Bad Bunny", duration: "4:27" },
-  { song: "FE!N", artist: "Travis Scott", duration: "3:11" },
-  { song: "Birds of a Feather", artist: "Billie Eilish", duration: "3:18" },
-  { song: "Sunflower", artist: "Post Malone", duration: "2:38" },
-];
-
-let songIndex = 0;
-
-
-function updateStatus() {
-
-  const current = playlist[songIndex];
-
-  client.user.setPresence({
-    status: "dnd",
-
-    activities: [
-      {
-        name: `${current.song} - ${current.artist} [${current.duration}]`,
-        type: ActivityType.Listening,
-      },
-      {
-        name: "Custom Status",
-        type: ActivityType.Custom,
-        state: "Vibing to music 🎵",
-        emoji: {
-          id: CUSTOM_EMOJI_ID,
-          name: CUSTOM_EMOJI_NAME,
-          animated: true,
-        },
-      },
-    ],
+  client.user.setActivity('Cris MJ - Part Time', {
+    type: ActivityType.Listening,
+    state: '🎵 Lyrics: Y si algún día te vuelvo a ver...',
+    timestamps: {
+      start: startTime,
+      end: startTime + (songDurationSeconds * 1000)
+    }
   });
-
-  console.log(`Listening status: ${current.song} - ${current.artist} (${current.duration})`);
-
-  songIndex = (songIndex + 1) % playlist.length;
-}
-
-
-// =====================================================
-// CONNECT TO VOICE CHANNEL
-// =====================================================
-
-async function connectToChannel(channel) {
-
-  if (!channel) {
-    throw new Error("Voice channel not found.");
-  }
-
-  if (!channel.joinable) {
-    throw new Error(
-      "I do not have permission to join this voice channel."
-    );
-  }
-
-  const oldConnection = getVoiceConnection(
-    channel.guild.id
-  );
-
-  if (oldConnection) {
-    try {
-      oldConnection.destroy();
-    } catch (error) {
-      console.error("Old connection error:", error);
-    }
-  }
-
-  const connection = joinVoiceChannel({
-
-    channelId: channel.id,
-
-    guildId: channel.guild.id,
-
-    adapterCreator:
-      channel.guild.voiceAdapterCreator,
-
-    selfDeaf: true,
-
-    selfMute: false,
-
-  });
-
-  connection.on(
-    VoiceConnectionStatus.Disconnected,
-    async () => {
-
-      console.log(
-        `Disconnected from ${channel.guild.name}. Trying to reconnect...`
-      );
-
-      try {
-
-        await Promise.race([
-          entersState(
-            connection,
-            VoiceConnectionStatus.Signalling,
-            5000
-          ),
-
-          entersState(
-            connection,
-            VoiceConnectionStatus.Connecting,
-            5000
-          ),
-        ]);
-
-      } catch (error) {
-
-        try {
-
-          console.log(
-            `Reconnecting to ${channel.guild.name}...`
-          );
-
-          connection.rejoin();
-
-        } catch (rejoinError) {
-
-          console.error(
-            "Reconnection failed:",
-            rejoinError
-          );
-
-        }
-
-      }
-
-    }
-  );
-
-
-  connection.on(
-    VoiceConnectionStatus.Destroyed,
-    () => {
-
-      console.log(
-        `Voice connection destroyed in ${channel.guild.name}`
-      );
-
-    }
-  );
-
-
-  try {
-
-    await entersState(
-      connection,
-      VoiceConnectionStatus.Ready,
-      30000
-    );
-
-    console.log(
-      `Connected to voice channel: ${channel.name}`
-    );
-
-    return connection;
-
-  } catch (error) {
-
-    connection.destroy();
-
-    throw error;
-  }
-
-}
-
-
-// =====================================================
-// AUTO RECONNECT AFTER BOT RESTART
-// =====================================================
-
-async function restoreVoiceChannels() {
-
-  console.log(
-    `Restoring ${Object.keys(savedChannels).length} voice channel(s)...`
-  );
-
-  for (const guildId of Object.keys(savedChannels)) {
-
-    const channelId = savedChannels[guildId];
-
-    try {
-
-      const channel =
-        await client.channels.fetch(channelId);
-
-      if (!channel) {
-        continue;
-      }
-
-      if (!channel.isVoiceBased()) {
-        continue;
-      }
-
-      await connectToChannel(channel);
-
-      console.log(
-        `Restored connection: ${channel.guild.name} -> ${channel.name}`
-      );
-
-    } catch (error) {
-
-      console.error(
-        `Could not restore voice channel ${channelId}:`,
-        error.message
-      );
-
-    }
-
-  }
-
-}
-
-
-// =====================================================
-// READY
-// =====================================================
-
-client.once("clientReady", async () => {
-
-  console.log(
-    `Bot Online: ${client.user.tag}`
-  );
-
-  // Register slash commands
-  await registerCommands();
-
-  // Set status immediately
-  updateStatus();
-
-  // Change Listening status every 3 minutes
-  setInterval(() => {
-
-    updateStatus();
-
-  }, 3 * 60 * 1000);
-
-
-  // Restore voice channels
-  await restoreVoiceChannels();
-
 });
 
+// 3. Handling-ka Amarrada (Slash Commands)
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-// =====================================================
-// SAFE REPLY
-// =====================================================
+  const { commandName, member, guild } = interaction;
 
-async function replyPrivate(interaction, content) {
-
-  const options = {
-    content,
-    flags: MessageFlags.Ephemeral,
-  };
-
-  if (interaction.replied || interaction.deferred) {
-
-    return interaction.followUp(options);
-
-  }
-
-  return interaction.reply(options);
-
-}
-
-
-// =====================================================
-// INTERACTION HANDLER
-// =====================================================
-
-client.on(
-  "interactionCreate",
-  async interaction => {
-
-    if (!interaction.isChatInputCommand()) {
-      return;
+  // /connect
+  if (commandName === 'connect') {
+    const voiceChannel = member.voice.channel;
+    
+    if (!voiceChannel) {
+      return interaction.reply({ content: '❌ Fadlan horta gal Voice Call si aan kuugu soo qoinsideuro!', ephemeral: true });
     }
 
+    joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfDeaf: false
+    });
 
-    // =================================================
-    // CONNECT
-    // =================================================
+    await interaction.reply(`🔊 Waxaan galay call-ka: **${voiceChannel.name}**. Khadka waan ku jirayaa ilaa aad ka tirhaado \`/disconnect\`!`);
+  }
 
-    if (interaction.commandName === "connect") {
+  // /disconnect
+  else if (commandName === 'disconnect') {
+    const connection = getVoiceConnection(guild.id);
 
-      if (!interaction.guild) {
-
-        return interaction.reply({
-          content:
-            "❌ This command can only be used inside a Discord server.",
-        });
-
-      }
-
-
-      if (
-        !interaction.memberPermissions?.has(
-          PermissionFlagsBits.Administrator
-        )
-      ) {
-
-        return replyPrivate(
-          interaction,
-          "❌ Only server administrators can use this command."
-        );
-
-      }
-
-
-      const voiceChannel =
-        interaction.member?.voice?.channel;
-
-
-      if (!voiceChannel) {
-
-        return replyPrivate(
-          interaction,
-          "❌ Join a voice channel first, then use `/connect`."
-        );
-
-      }
-
-
-      try {
-
-        await interaction.deferReply({
-          flags: MessageFlags.Ephemeral,
-        });
-
-
-        await connectToChannel(
-          voiceChannel
-        );
-
-
-        savedChannels[
-          interaction.guild.id
-        ] = voiceChannel.id;
-
-
-        saveVoiceChannels(
-          savedChannels
-        );
-
-
-        await interaction.editReply(
-          `✅ Connected to **${voiceChannel.name}**.\n\n` +
-          `🏁 The bot will automatically return to this voice channel after a restart.`
-        );
-
-
-      } catch (error) {
-
-        console.error(
-          "Connect error:",
-          error
-        );
-
-
-        if (
-          interaction.deferred ||
-          interaction.replied
-        ) {
-
-          await interaction.editReply(
-            `❌ Could not connect to the voice channel.\n\`${error.message}\``
-          );
-
-        } else {
-
-          await replyPrivate(
-            interaction,
-            "❌ Could not connect to the voice channel."
-          );
-
-        }
-
-      }
-
-      return;
+    if (!connection) {
+      return interaction.reply({ content: '❌ Hadda kuraasi/call ma ugu jiro server-kan!', ephemeral: true });
     }
 
-
-    // =================================================
-    // DISCONNECT
-    // =================================================
-
-    if (interaction.commandName === "disconnect") {
-
-      if (!interaction.guild) {
-
-        return interaction.reply({
-          content:
-            "❌ This command can only be used inside a Discord server.",
-        });
-
-      }
-
-
-      if (
-        !interaction.memberPermissions?.has(
-          PermissionFlagsBits.Administrator
-        )
-      ) {
-
-        return replyPrivate(
-          interaction,
-          "❌ Only server administrators can use this command."
-        );
-
-      }
-
-
-      try {
-
-        const connection =
-          getVoiceConnection(
-            interaction.guild.id
-          );
-
-
-        if (connection) {
-
-          connection.destroy();
-
-        }
-
-
-        delete savedChannels[
-          interaction.guild.id
-        ];
-
-
-        saveVoiceChannels(
-          savedChannels
-        );
-
-
-        return replyPrivate(
-          interaction,
-          "👋 Disconnected from the voice channel."
-        );
-
-
-      } catch (error) {
-
-        console.error(
-          "Disconnect error:",
-          error
-        );
-
-
-        return replyPrivate(
-          interaction,
-          "❌ Something went wrong while disconnecting."
-        );
-
-      }
-
-    }
-
-
-    // =================================================
-    // INVITE
-    // =================================================
-
-    if (interaction.commandName === "invite") {
-
-      const inviteURL =
-        `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&integration_type=0&scope=bot+applications.commands`;
-
-
-      const button =
-        new ButtonBuilder()
-          .setLabel("Invite Bot")
-          .setStyle(ButtonStyle.Link)
-          .setURL(inviteURL);
-
-
-      const row =
-        new ActionRowBuilder()
-          .addComponents(button);
-
-
-      const embed =
-        new EmbedBuilder()
-
-          .setTitle("🤖 Invite the Bot")
-
-          .setDescription(
-            "Click the button below to invite the bot to your Discord server."
-          )
-
-          .addFields({
-            name: "Support Server",
-            value: SUPPORT_SERVER,
-          });
-
-
-      return interaction.reply({
-
-        embeds: [embed],
-
-        components: [row],
-
-        flags: interaction.guild
-          ? MessageFlags.Ephemeral
-          : undefined,
-
-      });
-
-    }
-
-
-    // =================================================
-    // HELP
-    // =================================================
-
-    if (interaction.commandName === "help") {
-
-      const supportButton =
-        new ButtonBuilder()
-          .setLabel("Server Support")
-          .setStyle(ButtonStyle.Link)
-          .setURL(SUPPORT_SERVER);
-
-
-      const row =
-        new ActionRowBuilder()
-          .addComponents(
-            supportButton
-          );
-
-
-      const embed =
-        new EmbedBuilder()
-
-          .setTitle("🤖 Bot Commands")
-
-          .setDescription(
-            "Here is how to use the bot:"
-          )
-
-          .addFields(
-
-            {
-              name: "/connect",
-              value:
-                "Connect the bot to your current voice channel. Only server administrators can use this command.",
-            },
-
-            {
-              name: "/disconnect",
-              value:
-                "Disconnect the bot from the voice channel. Only server administrators can use this command.",
-            },
-
-            {
-              name: "/invite",
-              value:
-                "Get the bot invite link.",
-            },
-
-            {
-              name: "/help",
-              value:
-                "Show this help message.",
-            }
-
-          )
-
-          .setFooter({
-            text:
-              "The bot automatically remembers its voice channel after a restart.",
-          });
-
-
-      return interaction.reply({
-
-        embeds: [embed],
-
-        components: [row],
-
-        flags: interaction.guild
-          ? MessageFlags.Ephemeral
-          : undefined,
-
-      });
-
-    }
-
+    connection.destroy();
+    await interaction.reply('👋 Ka bixidda call-ka waa lagu guuleystay.');
   }
-);
 
-
-// =====================================================
-// ERROR HANDLERS
-// =====================================================
-
-client.on(
-  "error",
-  error => {
-
-    console.error(
-      "Discord client error:",
-      error
-    );
-
+  // /invite
+  else if (commandName === 'invite') {
+    const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`;
+    await interaction.reply(`🔗 **Si aad bot-ka uga soo darto server-kaaga guji link-kan:**\n${inviteUrl}`);
   }
-);
 
+  // /help
+  else if (commandName === 'help') {
+    const helpEmbed = new EmbedBuilder()
+      .setColor('#0099ff')
+      .setTitle('📌 Caawinaada Bot-ka (Help Menu)')
+      .setDescription('Waa kan liiska amarrada aad isticmaali karto:')
+      .addFields(
+        { name: '`/connect`', value: 'Bot-ku wuxuu galayaa call-ka aad ku jirto, uguma baxayo ilaa disconnect la dhaho.' },
+        { name: '`/disconnect`', value: 'Bot-ku wuxuu ka baxayaa call-ka uu ku jiro.' },
+        { name: '`/invite`', value: 'Ka hel link-ka bot-ka looga soo daro server-kaaga.' },
+        { name: '`/help`', value: 'Muujinta fariintan caawinaada ah.' }
+      )
+      .setFooter({ text: 'Active Listening Bot' });
 
-process.on(
-  "unhandledRejection",
-  error => {
-
-    console.error(
-      "Unhandled Promise Rejection:",
-      error
-    );
-
+    await interaction.reply({ embeds: [helpEmbed] });
   }
-);
+});
 
+// Soo akhrinta Token-ka si ammaan ah
+client.login(process.env.TOKEN);
 
-process.on(
-  "uncaughtException",
-  error => {
-
-    console.error(
-      "Uncaught Exception:",
-      error
-    );
-
-  }
-);
-
-
-// =====================================================
-// LOGIN
-// =====================================================
-
-client.login(TOKEN);
