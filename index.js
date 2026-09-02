@@ -1,4 +1,5 @@
-require('.env').config(); // Waxay ka soo akhrinaysaa Token-ka file-ka .env
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+
 
 const { 
   Client, 
