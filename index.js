@@ -1,4 +1,4 @@
-require('dotenv').config(); // Waxay ka soo akhrinaysaa Token-ka file-ka .env
+require('.env').config(); // Waxay ka soo akhrinaysaa Token-ka file-ka .env
 
 const { 
   Client, 
