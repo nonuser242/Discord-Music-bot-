@@ -70,7 +70,7 @@ function saveVoiceChannels(data) {
 let savedChannels = loadVoiceChannels();
 
 // =====================================================
-// SLASH COMMANDS (Si ay Profile Card-ka ugu soo baxaan)
+// SLASH COMMANDS
 // =====================================================
 
 const commands = [
@@ -99,7 +99,7 @@ const commands = [
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
-    console.log("Loading global slash commands to profile...");
+    console.log("Loading global slash commands...");
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
     console.log("Commands profile-ka si sax ah ayaa loogu diwaan-geliyay!");
   } catch (error) {
@@ -108,7 +108,7 @@ async function registerCommands() {
 }
 
 // =====================================================
-// DYNAMIC 3000+ SONG GENERATOR & LYRICS LOOP
+// SONG GENERATOR & LYRICS LOOP
 // =====================================================
 
 const artists = [
@@ -124,7 +124,7 @@ const songTitles = [
 const lyricsDatabase = [
   ["🎵 'Como tu te llamas yo no se...'", "🎵 'Y de donde vienes tampoco se...'", "🎵 'Lo unico que se es que te quiero a ti...'"],
   ["🎵 'Y si algún día te vuelvo a ver...'", "🎵 'No te olvides de mí...'", "🎵 'Baby, tú ere' mi parte time...'"],
-  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can'sleep until I feel your touch...'", "🎵 'I'm running out of time...'"]
+  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"]
 ];
 
 function getRandomSong() {
@@ -167,6 +167,7 @@ function startSongPlayer() {
 }
 
 function updateStatusDisplay() {
+  // Wax walba oo Custom Status ah waa la saaray si ay Listening Activity-ga u muuqato
   client.user.setPresence({
     status: "dnd",
     activities: [
@@ -180,7 +181,7 @@ function updateStatusDisplay() {
           end: songStartTime + (currentSong.duration * 1000)
         },
         assets: {
-          largeImage: "42749", // Key name-ki ka muuqday Developer Portal
+          largeImage: "42749",
           largeText: "Fenix"
         }
       }
