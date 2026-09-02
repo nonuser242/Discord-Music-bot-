@@ -150,41 +150,56 @@ async function registerCommands() {
 
 
 // =====================================================
-// BOT STATUS
+// BOT STATUS (ACTIVE LISTENING + LYRICS + TIMESTAMPS)
 // =====================================================
 
-// Foreign / international songs only
 const songs = [
-  "Cris MJ",
-  "The Weeknd",
-  "Drake",
-  "DJ Khaled",
-  "Bad Bunny",
-  "Travis Scott",
-  "Billie Eilish",
-  "Post Malone",
+  {
+    title: `${CUSTOM_EMOJI} Cris MJ - Part Time`,
+    lyrics: "🎵 Lyrics: 'Y si algún día te vuelvo a ver...'",
+    duration: 210 // 3:30 mins
+  },
+  {
+    title: `${CUSTOM_EMOJI} The Weeknd - Blinding Lights`,
+    lyrics: "🎵 Lyrics: 'I said, ooh, I'm blinded by the lights...'",
+    duration: 200
+  },
+  {
+    title: `${CUSTOM_EMOJI} Drake - God's Plan`,
+    lyrics: "🎵 Lyrics: 'I hold back, sometimes I won't...'",
+    duration: 198
+  },
+  {
+    title: `${CUSTOM_EMOJI} Bad Bunny - Monaco`,
+    lyrics: "🎵 Lyrics: 'Dime qué tú quiere', te lo doy...'",
+    duration: 260
+  }
 ];
 
 let songIndex = 0;
 
-
 function updateStatus() {
-
-  const song = songs[songIndex];
+  const currentSong = songs[songIndex];
+  const startTime = Date.now();
 
   client.user.setPresence({
     status: "dnd",
-
     activities: [
       {
-        name: `${CUSTOM_EMOJI} ${song}`,
+        name: currentSong.title,
         type: ActivityType.Listening,
+        state: currentSong.lyrics, // Ku darida Lyrics-ka
+        timestamps: {
+          start: startTime,
+          end: startTime + (currentSong.duration * 1000) // Ku darida Timer-ka daqiiqadaha
+        }
       },
     ],
   });
 
-  console.log(`Listening status: ${song}`);
+  console.log(`Listening status: ${currentSong.title}`);
 
+  // U bood heesta xigta
   songIndex = (songIndex + 1) % songs.length;
 }
 
@@ -380,12 +395,10 @@ client.once("clientReady", async () => {
   // Set status immediately
   updateStatus();
 
-  // Change Listening status every 5 minutes
+  // Change Listening status every 3.5 minutes
   setInterval(() => {
-
     updateStatus();
-
-  }, 5 * 60 * 1000);
+  }, 3.5 * 60 * 1000);
 
 
   // Restore voice channels
@@ -435,7 +448,6 @@ client.on(
 
     if (interaction.commandName === "connect") {
 
-      // Must be used inside a server
       if (!interaction.guild) {
 
         return interaction.reply({
@@ -446,7 +458,6 @@ client.on(
       }
 
 
-      // Admin only
       if (
         !interaction.memberPermissions?.has(
           PermissionFlagsBits.Administrator
@@ -487,7 +498,6 @@ client.on(
         );
 
 
-        // Save separately for every server
         savedChannels[
           interaction.guild.id
         ] = voiceChannel.id;
@@ -552,7 +562,6 @@ client.on(
       }
 
 
-      // Admin only
       if (
         !interaction.memberPermissions?.has(
           PermissionFlagsBits.Administrator
@@ -582,7 +591,6 @@ client.on(
         }
 
 
-        // Remove saved voice channel
         delete savedChannels[
           interaction.guild.id
         ];
@@ -798,3 +806,4 @@ process.on(
 // =====================================================
 
 client.login(TOKEN);
+
