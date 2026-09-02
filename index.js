@@ -103,76 +103,82 @@ async function registerCommands() {
 }
 
 // =====================================================
-// REAL-TIME LYRICS & SONG DYNAMICS
+// DYNAMIC 3000+ SONG GENERATOR & LYRICS LOOP
 // =====================================================
 
-const playlist = [
-  {
-    title: "Cris MJ - Part Time",
-    duration: 60,
-    lyricsLines: [
-      "🎵 Lyrics: 'Y si algún día te vuelvo a ver...'",
-      "🎵 Lyrics: 'No te olvides de mí...'",
-      "🎵 Lyrics: 'Tú sabes cómo soy...'",
-      "🎵 Lyrics: 'Baby, tú ere' mi parte time...'"
-    ]
-  },
-  {
-    title: "The Weeknd - Blinding Lights",
-    duration: 60,
-    lyricsLines: [
-      "🎵 Lyrics: 'I've been on my own for long enough...'",
-      "🎵 Lyrics: 'I said, ooh, I'm blinded by the lights...'",
-      "🎵 Lyrics: 'No, I can't sleep until I feel your touch...'",
-      "🎵 Lyrics: 'I'm running out of time...'"
-    ]
-  },
-  {
-    title: "Drake - God's Plan",
-    duration: 60,
-    lyricsLines: [
-      "🎵 Lyrics: 'I hold back, sometimes I won't...'",
-      "🎵 Lyrics: 'She said, Do you love me? I tell her, Only partly...'",
-      "🎵 Lyrics: 'I only love my bed and my mama, I'm sorry...'",
-      "🎵 Lyrics: 'God's plan, God's plan...'"
-    ]
-  }
+const artists = [
+  "Cris MJ", "The Weeknd", "Drake", "Bad Bunny", "Travis Scott", 
+  "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa", "Rihanna",
+  "SZA", "Taylor Swift", "Bruno Mars", "Kanye West", "XXXTENTACION",
+  "Juice WRLD", "Eminem", "Billie Eilish", "Ed Sheeran", "Ariana Grande"
 ];
 
-let songIndex = 0;
+const songTitles = [
+  "Starboy", "God's Plan", "Part Time", "Monaco", "FE!N", "HUMBLE.",
+  "Circles", "Peaches", "Levitating", "Diamonds", "Kill Bill", "Blinding Lights",
+  "Save Your Tears", "One Dance", "Sicko Mode", "Lucid Dreams", "Sad!",
+  "Shape of You", "7 rings", "As It Was", "Stay", "Sunflower", "Rockstar"
+];
+
+const lyricsDatabase = [
+  ["🎵 'Y si algún día te vuelvo a ver...'", "🎵 'No te olvides de mí...'", "🎵 'Baby, tú ere' mi parte time...'"],
+  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"],
+  ["🎵 'I hold back, sometimes I won't...'", "🎵 'She said, Do you love me? I tell her, Only partly...'", "🎵 'God's plan, God's plan...'"],
+  ["🎵 'Dime qué tú quiere', te lo doy...'", "🎵 'Caminando por Mónaco...'", "🎵 'Disfrutando de la vida...'"],
+  ["🎵 'Yeah, I've been on my own...'", "🎵 'Livin' fast, night time vibes...'", "🎵 'Catching feeling every night...'"]
+];
+
+function getRandomSong() {
+  const randomArtist = artists[Math.floor(Math.random() * artists.length)];
+  const randomTitle = songTitles[Math.floor(Math.random() * songTitles.length)];
+  const randomLyrics = lyricsDatabase[Math.floor(Math.random() * lyricsDatabase.length)];
+  
+  return {
+    title: `${randomArtist} - ${randomTitle}`,
+    duration: 180 + Math.floor(Math.random() * 120), // 3 min ilaa 5 min
+    lyricsLines: randomLyrics
+  };
+}
+
+let currentSong = getRandomSong();
 let lineIndex = 0;
 let songStartTime = Date.now();
 
 function startSongPlayer() {
-  const currentSong = playlist[songIndex];
+  currentSong = getRandomSong();
   songStartTime = Date.now();
   lineIndex = 0;
 
-  updateLyricsDisplay();
+  updateStatusDisplay();
 
+  // Lyrics-ka oo isbedelaya 12 ilbiriqsi kasta
   const lyricsInterval = setInterval(() => {
     lineIndex++;
     if (lineIndex < currentSong.lyricsLines.length) {
-      updateLyricsDisplay();
+      updateStatusDisplay();
     } else {
       clearInterval(lyricsInterval);
     }
-  }, 10000);
+  }, 12000);
 
+  // Marka heestu dhamato, hees cusub oo random ah ayaa bilaabanaysa
   setTimeout(() => {
     clearInterval(lyricsInterval);
-    songIndex = (songIndex + 1) % playlist.length;
     startSongPlayer();
   }, currentSong.duration * 1000);
 }
 
-function updateLyricsDisplay() {
-  const currentSong = playlist[songIndex];
-
-  // Waxaa loo hagaajiyay si uu had iyo goor u ahaado "dnd"
+function updateStatusDisplay() {
   client.user.setPresence({
-    status: "dnd", // Do Not Disturb status
+    status: "dnd", // Had iyo goor Do Not Disturb (DND)
     activities: [
+      // 1. Custom Status Text (Sida sawirkaaga ka muuqata)
+      {
+        name: "Custom Status",
+        type: ActivityType.Custom,
+        state: "Vibing Music ♪",
+      },
+      // 2. Listening Activity (Listening to Heesta & Lyrics)
       {
         name: currentSong.title,
         type: ActivityType.Listening,
@@ -181,11 +187,11 @@ function updateLyricsDisplay() {
           start: songStartTime,
           end: songStartTime + (currentSong.duration * 1000)
         }
-      },
-    ],
+      }
+    ]
   });
 
-  console.log(`[NOW PLAYING] ${currentSong.title} | ${currentSong.lyricsLines[lineIndex]}`);
+  console.log(`[PLAYING] ${currentSong.title} | ${currentSong.lyricsLines[lineIndex]}`);
 }
 
 // =====================================================
@@ -343,3 +349,4 @@ client.on("interactionCreate", async interaction => {
 // =====================================================
 
 client.login(TOKEN);
+
