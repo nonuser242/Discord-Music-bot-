@@ -1,5 +1,4 @@
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-
+require('dotenv').config();
 
 const { 
   Client, 
@@ -12,6 +11,7 @@ const {
 } = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 
+// 1. Initializing Client-ka
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,7 +19,7 @@ const client = new Client({
   ]
 });
 
-// 1. Abuuridda Slash Commands-ka
+// 2. Slash Commands Configuration
 const commands = [
   new SlashCommandBuilder()
     .setName('connect')
@@ -38,25 +38,25 @@ const commands = [
     .setDescription('Hel caawinaad iyo liiska amarrada bot-ka')
 ].map(command => command.toJSON());
 
-// 2. Marka Bot-ku Online Soo Gallay
+// 3. Ready Event & Status Loop
 client.on('ready', async () => {
-  console.log(`Bot-kii waa online: ${client.user.tag}`);
+  console.log(`✅ Bot-kii waa online: ${client.user.tag}`);
 
-  // Diwaan-gelinta Slash Commands iyadoo loo isticmaalayo process.env.BOT_TOKEN
+  // Diwaan-gelinta Slash Commands
   const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
     await rest.put(
       Routes.applicationCommands(client.user.id),
       { body: commands }
     );
-    console.log('Slash Commands-kii waa la diwaan-geliyay!');
+    console.log('✅ Slash Commands-kii waa la diwaan-geliyay!');
   } catch (error) {
-    console.error('Cillad diwaan-gelinta amarrada:', error);
+    console.error('❌ Cillad diwaan-gelinta amarrada:', error);
   }
 
-  // Active Listening Status (wata Timer iyo Lyrics)
+  // Active Listening Status (Timer & Lyrics)
   const startTime = Date.now();
-  const songDurationSeconds = 210;
+  const songDurationSeconds = 210; // 3 daqiiqo iyo 30 ilbiriqsi
 
   client.user.setActivity('Cris MJ - Part Time', {
     type: ActivityType.Listening,
@@ -68,18 +68,18 @@ client.on('ready', async () => {
   });
 });
 
-// 3. Handling-ka Amarrada (Slash Commands)
+// 4. Slash Commands Handler
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const { commandName, member, guild } = interaction;
 
-  // /connect
+  // /connect Command
   if (commandName === 'connect') {
     const voiceChannel = member.voice.channel;
     
     if (!voiceChannel) {
-      return interaction.reply({ content: '❌ Fadlan horta gal Voice Call si aan kuugu soo qoinsideuro!', ephemeral: true });
+      return interaction.reply({ content: '❌ Fadlan horta gal Voice Call si aan kuugu soo joogo!', ephemeral: true });
     }
 
     joinVoiceChannel({
@@ -89,10 +89,10 @@ client.on('interactionCreate', async interaction => {
       selfDeaf: false
     });
 
-    await interaction.reply(`🔊 Waxaan galay call-ka: **${voiceChannel.name}**. Khadka waan ku jirayaa ilaa aad ka tirhaado \`/disconnect\`!`);
+    await interaction.reply(`🔊 Waxaan galay call-ka: **${voiceChannel.name}**. Khadka waan ku jirayaa ilaa aad ka tiraahdo \`/disconnect\`!`);
   }
 
-  // /disconnect
+  // /disconnect Command
   else if (commandName === 'disconnect') {
     const connection = getVoiceConnection(guild.id);
 
@@ -104,13 +104,13 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply('👋 Ka bixidda call-ka waa lagu guuleystay.');
   }
 
-  // /invite
+  // /invite Command
   else if (commandName === 'invite') {
     const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`;
     await interaction.reply(`🔗 **Si aad bot-ka uga soo darto server-kaaga guji link-kan:**\n${inviteUrl}`);
   }
 
-  // /help
+  // /help Command
   else if (commandName === 'help') {
     const helpEmbed = new EmbedBuilder()
       .setColor('#0099ff')
@@ -128,6 +128,5 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Soo akhrinta Token-ka si ammaan ah
-client.login(process.env.TOKEN);
-
+// Direct access to Token through Environment Variable
+client.login(process.env.BOT_TOKEN);
