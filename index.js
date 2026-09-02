@@ -70,35 +70,36 @@ function saveVoiceChannels(data) {
 let savedChannels = loadVoiceChannels();
 
 // =====================================================
-// SLASH COMMANDS
+// SLASH COMMANDS (Waxay si toos ah ugu muuqanayaan Profile-ka)
 // =====================================================
 
 const commands = [
   new SlashCommandBuilder()
     .setName("connect")
-    .setDescription("Connect the bot to your voice channel"),
+    .setDescription("Bot-ka ugu xir voice channel-kaaga"),
 
   new SlashCommandBuilder()
     .setName("disconnect")
-    .setDescription("Disconnect the bot from the voice channel"),
+    .setDescription("Bot-ka ka saar voice channel-ka"),
 
   new SlashCommandBuilder()
     .setName("invite")
-    .setDescription("Get the bot invite link"),
+    .setDescription("Soo saar link-ka bot-ka lagu soo darto"),
 
   new SlashCommandBuilder()
     .setName("help")
-    .setDescription("Learn how to use the bot"),
+    .setDescription("Hel caawimaad ku saabsan isticmaalka bot-ka"),
 ].map(command => command.toJSON());
 
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
-    console.log("| Loading slash commands...");
+    console.log("Loading global slash commands to profile...");
+    // Global Commands waxay Profile Card-ka ku soo saaraan amarrada
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log("| Slash Commands Loaded!");
+    console.log("Commands profile-ka si sax ah ayaa loogu diwaan-geliyay!");
   } catch (error) {
-    console.error("Slash command error:", error);
+    console.error("Command registration error:", error);
   }
 }
 
@@ -109,23 +110,18 @@ async function registerCommands() {
 const artists = [
   "Cris MJ", "The Weeknd", "Drake", "Bad Bunny", "Travis Scott", 
   "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa", "Rihanna",
-  "SZA", "Taylor Swift", "Bruno Mars", "Kanye West", "XXXTENTACION",
-  "Juice WRLD", "Eminem", "Billie Eilish", "Ed Sheeran", "Ariana Grande"
+  "SZA", "Taylor Swift", "Bruno Mars", "Kanye West", "XXXTENTACION"
 ];
 
 const songTitles = [
   "Starboy", "God's Plan", "Part Time", "Monaco", "FE!N", "HUMBLE.",
-  "Circles", "Peaches", "Levitating", "Diamonds", "Kill Bill", "Blinding Lights",
-  "Save Your Tears", "One Dance", "Sicko Mode", "Lucid Dreams", "Sad!",
-  "Shape of You", "7 rings", "As It Was", "Stay", "Sunflower", "Rockstar"
+  "Circles", "Peaches", "Levitating", "Diamonds", "Kill Bill", "Blinding Lights"
 ];
 
 const lyricsDatabase = [
   ["🎵 'Y si algún día te vuelvo a ver...'", "🎵 'No te olvides de mí...'", "🎵 'Baby, tú ere' mi parte time...'"],
   ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"],
-  ["🎵 'I hold back, sometimes I won't...'", "🎵 'She said, Do you love me? I tell her, Only partly...'", "🎵 'God's plan, God's plan...'"],
-  ["🎵 'Dime qué tú quiere', te lo doy...'", "🎵 'Caminando por Mónaco...'", "🎵 'Disfrutando de la vida...'"],
-  ["🎵 'Yeah, I've been on my own...'", "🎵 'Livin' fast, night time vibes...'", "🎵 'Catching feeling every night...'"]
+  ["🎵 'I hold back, sometimes I won't...'", "🎵 'She said, Do you love me? I tell her, Only partly...'", "🎵 'God's plan, God's plan...'"]
 ];
 
 function getRandomSong() {
@@ -135,7 +131,7 @@ function getRandomSong() {
   
   return {
     title: `${randomArtist} - ${randomTitle}`,
-    duration: 180 + Math.floor(Math.random() * 120), // 3 min ilaa 5 min
+    duration: 180 + Math.floor(Math.random() * 120),
     lyricsLines: randomLyrics
   };
 }
@@ -151,7 +147,6 @@ function startSongPlayer() {
 
   updateStatusDisplay();
 
-  // Lyrics-ka oo isbedelaya 12 ilbiriqsi kasta
   const lyricsInterval = setInterval(() => {
     lineIndex++;
     if (lineIndex < currentSong.lyricsLines.length) {
@@ -159,9 +154,8 @@ function startSongPlayer() {
     } else {
       clearInterval(lyricsInterval);
     }
-  }, 12000);
+  }, 10000);
 
-  // Marka heestu dhamato, hees cusub oo random ah ayaa bilaabanaysa
   setTimeout(() => {
     clearInterval(lyricsInterval);
     startSongPlayer();
@@ -170,15 +164,13 @@ function startSongPlayer() {
 
 function updateStatusDisplay() {
   client.user.setPresence({
-    status: "dnd", // Had iyo goor Do Not Disturb (DND)
+    status: "dnd",
     activities: [
-      // 1. Custom Status Text (Sida sawirkaaga ka muuqata)
       {
         name: "Custom Status",
         type: ActivityType.Custom,
         state: "Vibing Music ♪",
       },
-      // 2. Listening Activity (Listening to Heesta & Lyrics)
       {
         name: currentSong.title,
         type: ActivityType.Listening,
@@ -190,8 +182,6 @@ function updateStatusDisplay() {
       }
     ]
   });
-
-  console.log(`[PLAYING] ${currentSong.title} | ${currentSong.lyricsLines[lineIndex]}`);
 }
 
 // =====================================================
@@ -236,7 +226,6 @@ async function connectToChannel(channel) {
 }
 
 async function restoreVoiceChannels() {
-  console.log(`Restoring ${Object.keys(savedChannels).length} voice channel(s)...`);
   for (const guildId of Object.keys(savedChannels)) {
     const channelId = savedChannels[guildId];
     try {
