@@ -2,688 +2,355 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
-    Client,
-    GatewayIntentBits,
-    REST,
-    Routes,
-    SlashCommandBuilder,
-    PermissionFlagsBits,
-    ActivityType,
-    MessageFlags,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  ActivityType,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  MessageFlags,
 } = require("discord.js");
 
 const {
-    joinVoiceChannel,
-    entersState,
-    VoiceConnectionStatus,
-    getVoiceConnection,
+  joinVoiceChannel,
+  getVoiceConnection,
+  VoiceConnectionStatus,
+  entersState,
 } = require("@discordjs/voice");
 
-// ============================================================
+// =====================================================
 // CONFIG
-// ============================================================
+// =====================================================
 
-const TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
-
+const TOKEN = process.env.TOKEN;
 const CLIENT_ID = "1543273003822092469";
-
 const SUPPORT_SERVER = "https://discord.gg/JNrsrm8kn";
-
 const DATA_FILE = path.join(__dirname, "voice_channels.json");
 
-// Your custom Discord emoji.
-// Note: Discord may display this as text inside bot presence.
-const CUSTOM_EMOJI = "<a:Scubbacat:1542552078382272532>";
-
-// Foreign songs/artists only.
-const LISTENING_NAMES = [
-    "Chris MJ",
-    "DJ Khaled",
-    "The Weeknd",
-    "Drake",
-    "Bruno Mars",
-    "Justin Bieber",
-    "Travis Scott",
-    "Future",
-    "Central Cee",
-    "Tate McRae",
-];
-
-// ============================================================
-// CHECK TOKEN
-// ============================================================
-
 if (!TOKEN) {
-    console.error("ERROR: DISCORD_TOKEN environment variable is missing.");
-    process.exit(1);
+  console.error("ERROR: TOKEN is missing.");
+  process.exit(1);
 }
 
-// ============================================================
-// CLIENT
-// ============================================================
-
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates,
-    ],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+  ],
 });
 
-// ============================================================
-// VOICE STORAGE
-// ============================================================
+// =====================================================
+// SAVE / LOAD VOICE CHANNELS
+// =====================================================
 
 function loadVoiceChannels() {
-    try {
-        if (!fs.existsSync(DATA_FILE)) {
-            return {};
-        }
-
-        const data = fs.readFileSync(DATA_FILE, "utf8");
-
-        if (!data.trim()) {
-            return {};
-        }
-
-        return JSON.parse(data);
-    } catch (error) {
-        console.error("Failed to load voice_channels.json:", error);
-        return {};
-    }
+  try {
+    if (!fs.existsSync(DATA_FILE)) return {};
+    const data = fs.readFileSync(DATA_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("Could not load voice channels:", error);
+    return {};
+  }
 }
 
 function saveVoiceChannels(data) {
-    try {
-        fs.writeFileSync(
-            DATA_FILE,
-            JSON.stringify(data, null, 2),
-            "utf8"
-        );
-    } catch (error) {
-        console.error("Failed to save voice_channels.json:", error);
-    }
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+  } catch (error) {
+    console.error("Could not save voice channels:", error);
+  }
 }
 
-let savedVoiceChannels = loadVoiceChannels();
+let savedChannels = loadVoiceChannels();
 
-// ============================================================
-// ADMIN CHECK
-// ============================================================
-
-function isAdmin(interaction) {
-    if (!interaction.guild) {
-        return false;
-    }
-
-    return interaction.memberPermissions?.has(
-        PermissionFlagsBits.Administrator
-    );
-}
-
-// ============================================================
-// JOIN SAVED VOICE CHANNEL
-// ============================================================
-
-async function joinSavedVoiceChannel(guild) {
-    const channelId = savedVoiceChannels[guild.id];
-
-    if (!channelId) {
-        return null;
-    }
-
-    const channel = guild.channels.cache.get(channelId);
-
-    if (!channel) {
-        delete savedVoiceChannels[guild.id];
-        saveVoiceChannels(savedVoiceChannels);
-
-        console.log(
-            `[VOICE] Saved channel no longer exists in ${guild.name}.`
-        );
-
-        return null;
-    }
-
-    if (!channel.isVoiceBased()) {
-        delete savedVoiceChannels[guild.id];
-        saveVoiceChannels(savedVoiceChannels);
-
-        console.log(
-            `[VOICE] Saved channel is not a voice channel in ${guild.name}.`
-        );
-
-        return null;
-    }
-
-    try {
-        const oldConnection = getVoiceConnection(guild.id);
-
-        if (oldConnection) {
-            oldConnection.destroy();
-        }
-
-        const connection = joinVoiceChannel({
-            channelId: channel.id,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-            selfDeaf: true,
-            selfMute: false,
-        });
-
-        await entersState(
-            connection,
-            VoiceConnectionStatus.Ready,
-            20_000
-        );
-
-        console.log(
-            `[VOICE] Connected to ${channel.name} in ${guild.name}.`
-        );
-
-        return connection;
-    } catch (error) {
-        console.error(
-            `[VOICE] Failed to join ${guild.name}:`,
-            error.message
-        );
-
-        return null;
-    }
-}
-
-// ============================================================
-// RECONNECT HANDLER
-// ============================================================
-
-function setupConnectionRecovery(connection, guild) {
-    let reconnecting = false;
-
-    connection.on(
-        VoiceConnectionStatus.Disconnected,
-        async () => {
-            if (reconnecting) {
-                return;
-            }
-
-            // If /disconnect was used, do not reconnect.
-            if (!savedVoiceChannels[guild.id]) {
-                return;
-            }
-
-            reconnecting = true;
-
-            console.log(
-                `[VOICE] Connection lost in ${guild.name}. Reconnecting...`
-            );
-
-            try {
-                await entersState(
-                    connection,
-                    VoiceConnectionStatus.Signalling,
-                    5_000
-                );
-
-                reconnecting = false;
-                console.log(
-                    `[VOICE] Connection recovered in ${guild.name}.`
-                );
-            } catch {
-                try {
-                    connection.destroy();
-                } catch {}
-
-                await new Promise((resolve) =>
-                    setTimeout(resolve, 5_000)
-                );
-
-                if (savedVoiceChannels[guild.id]) {
-                    await joinSavedVoiceChannel(guild);
-                }
-
-                reconnecting = false;
-            }
-        }
-    );
-}
-
-// ============================================================
-// PRESENCE
-// ============================================================
-
-let listeningIndex = 0;
-
-function updatePresence() {
-    if (!client.user) {
-        return;
-    }
-
-    const songName =
-        LISTENING_NAMES[listeningIndex % LISTENING_NAMES.length];
-
-    listeningIndex++;
-
-    client.user.setPresence({
-        status: "dnd",
-
-        activities: [
-            {
-                name: songName,
-                type: ActivityType.Listening,
-
-                // This is text. Discord may not render a server
-                // custom emoji inside bot presence.
-                state: `${CUSTOM_EMOJI} Music 24/7`,
-            },
-        ],
-    });
-
-    console.log(`[PRESENCE] Listening to ${songName}`);
-}
-
-// ============================================================
+// =====================================================
 // SLASH COMMANDS
-// ============================================================
+// =====================================================
 
 const commands = [
+  new SlashCommandBuilder()
+    .setName("connect")
+    .setDescription("Bot-ka ugu xir voice channel-kaaga"),
 
-    new SlashCommandBuilder()
-        .setName("connect")
-        .setDescription("Connect the bot to your current voice channel."),
+  new SlashCommandBuilder()
+    .setName("disconnect")
+    .setDescription("Bot-ka ka saar voice channel-ka"),
 
-    new SlashCommandBuilder()
-        .setName("disconnect")
-        .setDescription("Disconnect the bot from the voice channel."),
+  new SlashCommandBuilder()
+    .setName("invite")
+    .setDescription("Soo saar link-ka bot-ka lagu soo darto"),
 
-    new SlashCommandBuilder()
-        .setName("help")
-        .setDescription("Show bot commands and information."),
-
-    new SlashCommandBuilder()
-        .setName("invite")
-        .setDescription("Get the bot invite link."),
-];
-
-// ============================================================
-// REGISTER COMMANDS
-// ============================================================
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Hel caawimaad ku saabsan isticmaalka bot-ka"),
+].map(command => {
+  const obj = command.toJSON();
+  obj.integration_types = [0, 1];
+  obj.contexts = [0, 1, 2];
+  return obj;
+});
 
 async function registerCommands() {
-    const rest = new REST({
-        version: "10",
-    }).setToken(TOKEN);
-
-    try {
-        console.log("[COMMANDS] Registering slash commands...");
-
-        await rest.put(
-            Routes.applicationCommands(CLIENT_ID),
-            {
-                body: commands.map((command) =>
-                    command.toJSON()
-                ),
-            }
-        );
-
-        console.log("[COMMANDS] Slash commands registered.");
-    } catch (error) {
-        console.error(
-            "[COMMANDS] Failed to register commands:",
-            error
-        );
-    }
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+  try {
+    console.log("Loading global slash commands to profile...");
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    console.log("Commands profile-ka si sax ah ayaa loogu diwaan-geliyay!");
+  } catch (error) {
+    console.error("Command registration error:", error);
+  }
 }
 
-// ============================================================
-// READY
-// ============================================================
+// =====================================================
+// DYNAMIC 300+ SONGS & LYRICS SYSTEM
+// =====================================================
 
-client.once("ready", async () => {
-    console.log("======================================");
-    console.log(`Logged in as ${client.user.tag}`);
-    console.log(`Servers: ${client.guilds.cache.size}`);
-    console.log("Status: DND");
-    console.log("======================================");
+const artists = [
+  "Nicky Jam", "Cris MJ", "The Weeknd", "Drake", "Bad Bunny", 
+  "Travis Scott", "Kendrick Lamar", "Post Malone", "Justin Bieber", "Dua Lipa",
+  "Rauw Alejandro", "Feid", "Ozuna", "J Balvin", "Daddy Yankee", "Karol G"
+];
 
-    // Set initial presence.
-    updatePresence();
+const songTitles = [
+  "Hasta el Amanecer", "Starboy", "God's Plan", "Part Time", "Monaco", 
+  "FE!N", "HUMBLE.", "Circles", "Peaches", "Blinding Lights", "One Dance",
+  "Rockstar", "Un Preview", "Lala", "Classy 101", "Despacito", "Mi Gente"
+];
 
-    // Rotate Listening status every 5 minutes.
-    setInterval(
-        updatePresence,
-        5 * 60 * 1000
-    );
+const lyricsDatabase = [
+  ["🎵 'Como tu te llamas yo no se...'", "🎵 'Y de donde vienes tampoco se...'", "🎵 'Lo unico que se es que te quiero a ti...'"],
+  ["🎵 'Y si algún día te vuelvo a ver...'", "🎵 'No te olvides de mí...'", "🎵 'Baby, tú ere' mi parte time...'"],
+  ["🎵 'I said, ooh, I'm blinded by the lights...'", "🎵 'No, I can't sleep until I feel your touch...'", "🎵 'I'm running out of time...'"],
+  ["🎵 'Yeah, I'm gonna take my horse...'", "🎵 'To the old town road...'", "🎵 'I'm gonna ride 'til I can't no more...'"],
+  ["🎵 'Looking for a time, yeah...'", "🎵 'I know you want this for life...'", "🎵 'Let's keep it going all night...'"]
+];
 
-    // Automatically reconnect to saved voice channels.
-    for (const guild of client.guilds.cache.values()) {
-        if (!savedVoiceChannels[guild.id]) {
-            continue;
-        }
+function getRandomSong() {
+  const randomArtist = artists[Math.floor(Math.random() * artists.length)];
+  const randomTitle = songTitles[Math.floor(Math.random() * songTitles.length)];
+  const randomLyrics = lyricsDatabase[Math.floor(Math.random() * lyricsDatabase.length)];
+  
+  return {
+    artist: randomArtist,
+    title: randomTitle,
+    duration: 180 + Math.floor(Math.random() * 120), // 3 ilaa 5 daqiiqo
+    lyricsLines: randomLyrics
+  };
+}
 
-        console.log(
-            `[VOICE] Restoring connection for ${guild.name}...`
-        );
+let currentSong = getRandomSong();
+let lineIndex = 0;
+let songStartTime = Date.now();
+let lyricsInterval = null;
 
-        const connection =
-            await joinSavedVoiceChannel(guild);
+function startSongPlayer() {
+  if (lyricsInterval) clearInterval(lyricsInterval);
 
-        if (connection) {
-            setupConnectionRecovery(
-                connection,
-                guild
-            );
-        }
+  currentSong = getRandomSong();
+  songStartTime = Date.now();
+  lineIndex = 0;
+
+  updateStatusDisplay();
+
+  // Lyrics-ka hoose ku soo baxaya oo is beddelaya 10-kiiba ilbiriqsi
+  lyricsInterval = setInterval(() => {
+    lineIndex++;
+    if (lineIndex < currentSong.lyricsLines.length) {
+      updateStatusDisplay();
+    } else {
+      lineIndex = 0; // Dib uga bilow lyrics-ka haddii heestu wali socoto
+      updateStatusDisplay();
     }
+  }, 10000);
+
+  // Marka heestu dhammato, dib u bilaabid hees cusub
+  setTimeout(() => {
+    if (lyricsInterval) clearInterval(lyricsInterval);
+    startSongPlayer();
+  }, currentSong.duration * 1000);
+}
+
+function updateStatusDisplay() {
+  const currentLyric = currentSong.lyricsLines[lineIndex] || currentSong.artist;
+
+  client.user.setPresence({
+    status: "dnd",
+    activities: [
+      {
+        name: currentSong.title,
+        type: ActivityType.Listening,
+        details: `${currentSong.title} - ${currentSong.artist}`, // Magaca heesta & fanaanka
+        state: currentLyric,                                     // Lyrics-ka hoose ku soo baxaya!
+        timestamps: {
+          start: songStartTime,
+          end: songStartTime + (currentSong.duration * 1000)
+        },
+        assets: {
+          largeImage: "music", // Halkan waxaa la geliyay asset key-gii aad Developer Portal ku soo gelisay ("music")
+          largeText: "Grilll Music"
+        }
+      }
+    ]
+  });
+}
+
+// =====================================================
+// VOICE CHANNEL LOGIC
+// =====================================================
+
+async function connectToChannel(channel) {
+  if (!channel) throw new Error("Voice channel not found.");
+  if (!channel.joinable) throw new Error("I do not have permission to join this voice channel.");
+
+  const oldConnection = getVoiceConnection(channel.guild.id);
+  if (oldConnection) {
+    try { oldConnection.destroy(); } catch (error) { console.error("Old connection error:", error); }
+  }
+
+  const connection = joinVoiceChannel({
+    channelId: channel.id,
+    guildId: channel.guild.id,
+    adapterCreator: channel.guild.voiceAdapterCreator,
+    selfDeaf: true,
+    selfMute: false,
+  });
+
+  connection.on(VoiceConnectionStatus.Disconnected, async () => {
+    try {
+      await Promise.race([
+        entersState(connection, VoiceConnectionStatus.Signalling, 5000),
+        entersState(connection, VoiceConnectionStatus.Connecting, 5000),
+      ]);
+    } catch (error) {
+      try { connection.rejoin(); } catch (rejoinError) { console.error("Reconnection failed:", rejoinError); }
+    }
+  });
+
+  try {
+    await entersState(connection, VoiceConnectionStatus.Ready, 30000);
+    return connection;
+  } catch (error) {
+    connection.destroy();
+    throw error;
+  }
+}
+
+async function restoreVoiceChannels() {
+  for (const guildId of Object.keys(savedChannels)) {
+    const channelId = savedChannels[guildId];
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (channel && channel.isVoiceBased()) {
+        await connectToChannel(channel);
+      }
+    } catch (error) {
+      console.error(`Could not restore voice channel ${channelId}:`, error.message);
+    }
+  }
+}
+
+// =====================================================
+// READY EVENT
+// =====================================================
+
+client.once("clientReady", async () => {
+  console.log(`Bot Online: ${client.user.tag}`);
+
+  await registerCommands();
+  startSongPlayer();
+  await restoreVoiceChannels();
 });
 
-// ============================================================
-// INTERACTIONS
-// ============================================================
+// =====================================================
+// INTERACTION HANDLER
+// =====================================================
 
-client.on("interactionCreate", async (interaction) => {
+async function replyPrivate(interaction, content) {
+  const options = { content, flags: MessageFlags.Ephemeral };
+  if (interaction.replied || interaction.deferred) {
+    return interaction.followUp(options);
+  }
+  return interaction.reply(options);
+}
 
-    if (!interaction.isChatInputCommand()) {
-        return;
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "connect") {
+    if (!interaction.guild) return interaction.reply({ content: "❌ Server-ka kaliya ayaa laga isticmaali karaa." });
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return replyPrivate(interaction, "❌ Admins kaliya ayaa amarkan isticmaali kara.");
     }
 
-    // ========================================================
-    // /HELP
-    // ========================================================
+    const voiceChannel = interaction.member?.voice?.channel;
+    if (!voiceChannel) return replyPrivate(interaction, "❌ Horta gal Voice Channel!");
 
-    if (interaction.commandName === "help") {
+    try {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await connectToChannel(voiceChannel);
 
-        const embed = new EmbedBuilder()
-            .setTitle("🎵 Music Bot Help")
-            .setDescription(
-                [
-                    "Here are the available commands:",
-                    "",
-                    "**🎧 Voice**",
-                    "`/connect` — Join your current voice channel.",
-                    "`/disconnect` — Leave the voice channel.",
-                    "",
-                    "**🤖 General**",
-                    "`/help` — Show this help menu.",
-                    "`/invite` — Get the bot invite link.",
-                    "",
-                    "**🔐 Admin**",
-                    "Voice management commands require Administrator permission.",
-                    "",
-                    `${CUSTOM_EMOJI} Music 24/7`,
-                ].join("\n")
-            )
-            .setFooter({
-                text: "Music Bot",
-            });
+      savedChannels[interaction.guild.id] = voiceChannel.id;
+      saveVoiceChannels(savedChannels);
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setLabel("Server Support")
-                .setURL(SUPPORT_SERVER)
-                .setStyle(ButtonStyle.Link)
-        );
+      await interaction.editReply(`✅ Waxaan galay **${voiceChannel.name}**.`);
+    } catch (error) {
+      await interaction.editReply(`❌ Cillad ayaa ka dhacday ku xirida voice-ka.`);
+    }
+    return;
+  }
 
-        // Private in servers.
-        if (interaction.guild) {
-            await interaction.reply({
-                embeds: [embed],
-                components: [row],
-                flags: MessageFlags.Ephemeral,
-            });
-        } else {
-            // Normal private DM.
-            await interaction.reply({
-                embeds: [embed],
-                components: [row],
-            });
-        }
-
-        return;
+  if (interaction.commandName === "disconnect") {
+    if (!interaction.guild) return interaction.reply({ content: "❌ Server-ka kaliya ayaa laga isticmaali karaa." });
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return replyPrivate(interaction, "❌ Admins kaliya ayaa amarkan isticmaali kara.");
     }
 
-    // ========================================================
-    // /INVITE
-    // ========================================================
+    try {
+      const connection = getVoiceConnection(interaction.guild.id);
+      if (connection) connection.destroy();
 
-    if (interaction.commandName === "invite") {
+      delete savedChannels[interaction.guild.id];
+      saveVoiceChannels(savedChannels);
 
-        const inviteURL =
-            `https://discord.com/oauth2/authorize` +
-            `?client_id=${CLIENT_ID}` +
-            `&permissions=8` +
-            `&scope=bot%20applications.commands`;
-
-        const embed = new EmbedBuilder()
-            .setTitle("🤖 Invite Me")
-            .setDescription(
-                [
-                    "Click the button below to invite the bot.",
-                    "",
-                    "The generated invite requests Administrator permission.",
-                ].join("\n")
-            );
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setLabel("Invite Bot")
-                .setURL(inviteURL)
-                .setStyle(ButtonStyle.Link)
-        );
-
-        if (interaction.guild) {
-            await interaction.reply({
-                embeds: [embed],
-                components: [row],
-                flags: MessageFlags.Ephemeral,
-            });
-        } else {
-            await interaction.reply({
-                embeds: [embed],
-                components: [row],
-            });
-        }
-
-        return;
+      return replyPrivate(interaction, "👋 Ka bixidda voice channel waa lagu guuleystay.");
+    } catch (error) {
+      return replyPrivate(interaction, "❌ Cillad ayaa dhacday.");
     }
+  }
 
-    // ========================================================
-    // COMMANDS BELOW REQUIRE SERVER
-    // ========================================================
+  if (interaction.commandName === "invite") {
+    const inviteURL = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&integration_type=0&scope=bot+applications.commands`;
+    const button = new ButtonBuilder().setLabel("Invite Bot").setStyle(ButtonStyle.Link).setURL(inviteURL);
+    const row = new ActionRowBuilder().addComponents(button);
+    const embed = new EmbedBuilder().setTitle("🤖 Invite Bot").setDescription("Guji button-ka hoose si aad bot-ka u soo darto.");
 
-    if (!interaction.guild) {
-        await interaction.reply({
-            content:
-                "❌ This command can only be used inside a server.",
-            flags: MessageFlags.Ephemeral,
-        });
+    return interaction.reply({ embeds: [embed], components: [row], flags: interaction.guild ? MessageFlags.Ephemeral : undefined });
+  }
 
-        return;
-    }
+  if (interaction.commandName === "help") {
+    const supportButton = new ButtonBuilder().setLabel("Server Support").setStyle(ButtonStyle.Link).setURL(SUPPORT_SERVER);
+    const row = new ActionRowBuilder().addComponents(supportButton);
+    const embed = new EmbedBuilder()
+      .setTitle("🤖 Bot Commands")
+      .addFields(
+        { name: "/connect", value: "Bot-ku wuxuu galayaa voice channel-ka." },
+        { name: "/disconnect", value: "Bot-ku wuxuu ka baxayaa voice channel-ka." },
+        { name: "/invite", value: "Soo saar link-ka bot-ka." },
+        { name: "/help", value: "Muuji caawimada." }
+      );
 
-    // ========================================================
-    // ADMIN CHECK
-    // ========================================================
-
-    if (!isAdmin(interaction)) {
-        await interaction.reply({
-            content:
-                "❌ You need **Administrator** permission to use this command.",
-            flags: MessageFlags.Ephemeral,
-        });
-
-        return;
-    }
-
-    // ========================================================
-    // /CONNECT
-    // ========================================================
-
-    if (interaction.commandName === "connect") {
-
-        const member = interaction.member;
-
-        const voiceChannel =
-            member.voice?.channel;
-
-        if (!voiceChannel) {
-            await interaction.reply({
-                content:
-                    "❌ You must be inside a voice channel first.",
-                flags: MessageFlags.Ephemeral,
-            });
-
-            return;
-        }
-
-        if (!voiceChannel.isVoiceBased()) {
-            await interaction.reply({
-                content:
-                    "❌ That is not a valid voice channel.",
-                flags: MessageFlags.Ephemeral,
-            });
-
-            return;
-        }
-
-        // Save this server's voice channel.
-        savedVoiceChannels[interaction.guild.id] =
-            voiceChannel.id;
-
-        saveVoiceChannels(savedVoiceChannels);
-
-        try {
-            const oldConnection =
-                getVoiceConnection(interaction.guild.id);
-
-            if (oldConnection) {
-                oldConnection.destroy();
-            }
-
-            const connection = joinVoiceChannel({
-                channelId: voiceChannel.id,
-                guildId: interaction.guild.id,
-                adapterCreator:
-                    interaction.guild.voiceAdapterCreator,
-                selfDeaf: true,
-                selfMute: false,
-            });
-
-            await entersState(
-                connection,
-                VoiceConnectionStatus.Ready,
-                20_000
-            );
-
-            setupConnectionRecovery(
-                connection,
-                interaction.guild
-            );
-
-            await interaction.reply({
-                content:
-                    `✅ Connected to **${voiceChannel.name}**.\n` +
-                    `💾 I will remember this voice channel after a restart.`,
-                flags: MessageFlags.Ephemeral,
-            });
-
-        } catch (error) {
-
-            console.error(
-                "[CONNECT ERROR]",
-                error
-            );
-
-            await interaction.reply({
-                content:
-                    "❌ I could not connect to that voice channel. Check my voice permissions.",
-                flags: MessageFlags.Ephemeral,
-            });
-        }
-
-        return;
-    }
-
-    // ========================================================
-    // /DISCONNECT
-    // ========================================================
-
-    if (interaction.commandName === "disconnect") {
-
-        // Remove saved channel first.
-        delete savedVoiceChannels[
-            interaction.guild.id
-        ];
-
-        saveVoiceChannels(savedVoiceChannels);
-
-        const connection =
-            getVoiceConnection(
-                interaction.guild.id
-            );
-
-        if (connection) {
-            connection.destroy();
-        }
-
-        await interaction.reply({
-            content:
-                "✅ Disconnected and removed the saved voice channel.",
-            flags: MessageFlags.Ephemeral,
-        });
-
-        return;
-    }
+    return interaction.reply({ embeds: [embed], components: [row], flags: interaction.guild ? MessageFlags.Ephemeral : undefined });
+  }
 });
 
-// ============================================================
-// GUILD DELETE
-// ============================================================
+// =====================================================
+// LOGIN
+// =====================================================
 
-client.on("guildDelete", (guild) => {
-
-    if (savedVoiceChannels[guild.id]) {
-        delete savedVoiceChannels[guild.id];
-        saveVoiceChannels(savedVoiceChannels);
-    }
-
-    console.log(
-        `[GUILD] Removed saved data for ${guild.name}.`
-    );
-});
-
-// ============================================================
-// ERROR HANDLERS
-// ============================================================
-
-client.on("error", (error) => {
-    console.error("[CLIENT ERROR]", error);
-});
-
-process.on("unhandledRejection", (error) => {
-    console.error(
-        "[UNHANDLED REJECTION]",
-        error
-    );
-});
-
-process.on("uncaughtException", (error) => {
-    console.error(
-        "[UNCAUGHT EXCEPTION]",
-        error
-    );
-});
-
-// ============================================================
-// START
-// ============================================================
-
-(async () => {
-    await registerCommands();
-
-    console.log("[BOT] Starting...");
-
-    await client.login(TOKEN);
-})();
+client.login(TOKEN);
